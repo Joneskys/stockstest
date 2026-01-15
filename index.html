@@ -2,41 +2,33 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Advanced Stock Dashboard</title>
+<title>Stock Historical Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 :root {
   --bg:#0f172a; --card:#111827; --border:#1f2937;
-  --text:#e5e7eb; --green:#22c55e; --red:#ef4444; --blue:#3b82f6;
+  --text:#e5e7eb; --green:#22c55e; --red:#ef4444;
 }
 body { margin:0; font-family:Arial; background:var(--bg); color:var(--text);}
 header {background:#020617;padding:12px;}
-.container {padding:14px;}
-.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
+.container {padding:16px;}
+.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
 table {width:100%;border-collapse:collapse;}
 th,td {padding:10px;border-bottom:1px solid var(--border);text-align:center;}
-th {cursor:pointer;}
 .pos {color:var(--green);font-weight:bold;}
 .neg {color:var(--red);font-weight:bold;}
-.controls {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
 input,button {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:8px;}
-button {cursor:pointer;}
-.mobile {font-size:13px;}
-@media(max-width:600px){
-  table, th, td {font-size:12px;}
-}
+th {cursor:pointer;}
 </style>
 </head>
 
 <body>
 
 <header>
-  <div class="controls">
-    📅 Date 1: <input type="date" id="date1">
-    📅 Date 2: <input type="date" id="date2">
-    <button onclick="exportCSV()">⬇ Export CSV</button>
-  </div>
+  📅 Select Date:
+  <input type="date" id="datePicker">
+  <button onclick="exportCSV()">⬇ Export CSV</button>
 </header>
 
 <div class="container">
@@ -59,16 +51,13 @@ button {cursor:pointer;}
 </div>
 
 <script>
-let stocks = JSON.parse(localStorage.getItem("stocks")) ||
-["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
+const stocks = ["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
+let tableData = [];
+let sortAsc = false;
 
-let sortAsc=false;
-let tableData=[];
-
-const today=new Date();
-const yest=new Date(); yest.setDate(today.getDate()-1);
-document.getElementById("date1").valueAsDate=yest;
-document.getElementById("date2").valueAsDate=today;
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 1);
+document.getElementById("datePicker").valueAsDate = yesterday;
 
 function toUnix(d){ return Math.floor(new Date(d).getTime()/1000); }
 
@@ -84,53 +73,64 @@ async function safeFetch(url){
       if(r.ok) return await r.json();
     }catch{}
   }
-  throw "Failed";
+  throw "All proxies failed";
 }
 
-async function fetchCandle(symbol,date){
-  const start=toUnix(date)-86400*10;
-  const end=toUnix(date)+86400*2;
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
-  const json=await safeFetch(url);
-  const r=json.chart?.result?.[0];
+async function fetchDaily(symbol,date){
+  const start = toUnix(date) - 86400 * 10;
+  const end   = toUnix(date) + 86400 * 2;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
+  const json = await safeFetch(url);
+  const r = json.chart?.result?.[0];
   if(!r) return null;
 
-  const q=r.indicators.quote[0];
-  let candles=[];
+  const q = r.indicators.quote[0];
+  let candles = [];
   for(let i=0;i<q.close.length;i++){
-    if(q.close[i]) candles.push({
-      close:q.close[i],low:q.low[i],high:q.high[i],volume:q.volume[i]
-    });
+    if(q.close[i]){
+      candles.push({
+        close:q.close[i],
+        low:q.low[i],
+        high:q.high[i],
+        volume:q.volume[i]
+      });
+    }
   }
-  if(candles.length<1) return null;
-  return candles[candles.length-1];
+
+  if(candles.length < 2) return null;
+
+  const today = candles[candles.length - 1];
+  const prev  = candles[candles.length - 2];
+
+  return {
+    ...today,
+    prevClose: prev.close
+  };
 }
 
 async function load(){
   tableData=[];
-  const d1=document.getElementById("date1").value;
-  const d2=document.getElementById("date2").value;
+  const date = document.getElementById("datePicker").value;
 
   for(let s of stocks){
     try{
-      const c1=await fetchCandle(s,d1);
-      const c2=await fetchCandle(s,d2);
-      if(!c1||!c2) continue;
+      const d = await fetchDaily(s,date);
+      if(!d) continue;
 
-      const ch=((c2.close-c1.close)/c1.close)*100;
-      tableData.push({...c2,symbol:s,change:ch});
+      const ch = ((d.close - d.prevClose)/d.prevClose)*100;
+      tableData.push({symbol:s,...d,change:ch});
     }catch{}
   }
   render();
 }
 
 function render(){
-  const tbody=document.getElementById("tbody");
+  const tbody = document.getElementById("tbody");
   tbody.innerHTML="";
   tableData.forEach(r=>{
-    const cls=r.change>=0?"pos":"neg";
-    tbody.innerHTML+=`
-      <tr title="Mini trend for ${r.symbol}">
+    const cls = r.change>=0?"pos":"neg";
+    tbody.innerHTML += `
+      <tr>
         <td>${r.symbol}</td>
         <td>${r.low.toFixed(2)}</td>
         <td>${r.high.toFixed(2)}</td>
@@ -159,9 +159,7 @@ function exportCSV(){
   a.click();
 }
 
-document.getElementById("date1").onchange=load;
-document.getElementById("date2").onchange=load;
-
+document.getElementById("datePicker").onchange = load;
 load();
 </script>
 
