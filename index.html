@@ -1,122 +1,150 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Stock Dashboard</title>
+  <title>Real Stock Dashboard (Yahoo Finance)</title>
   <style>
     body { font-family: Arial; padding: 20px; }
-    select, input, button { padding: 6px; margin: 5px; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+    th { background: #f2f2f2; position: sticky; top: 0; }
     .green { color: green; font-weight: bold; }
     .red { color: red; font-weight: bold; }
-    .card { border: 1px solid #ccc; padding: 15px; margin-top: 15px; border-radius: 8px; }
+    input, button { padding: 6px; margin: 6px; }
   </style>
 </head>
 <body>
 
-<h2>📈 Stock Dashboard</h2>
-
-<label>Select Stock:</label>
-<select id="stockSelect"></select>
+<h2>📊 Real Stock Dashboard (Yahoo Finance)</h2>
 
 <label>Select Date:</label>
 <input type="date" id="dateInput">
+<button onclick="loadTable()">Submit</button>
 
-<button onclick="loadStock()">Submit</button>
-
-<div id="output" class="card"></div>
+<table>
+  <thead>
+    <tr>
+      <th>Stock</th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>% Change</th>
+      <th>EMA(5)</th>
+      <th>RSI(14)</th>
+      <th>Support</th>
+      <th>Resistance</th>
+      <th>Signal</th>
+      <th>SL</th>
+      <th>Target</th>
+    </tr>
+  </thead>
+  <tbody id="stockTable"></tbody>
+</table>
 
 <script>
-const stocks = [
-"SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWLSILVER",
-"HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS",
-"MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"
-];
+const stocks = {
+  "SAGILITY": "SAGILITY.NS",
+  "GROWWGOLD": "GROWWGOLD.NS",
+  "JPPOWER": "JPPOWER.NS",
+  "IDEA": "IDEA.NS",
+  "BSE": "BSE.NS",
+  "HDFCBANK": "HDFCBANK.NS",
+  "SBIN": "SBIN.NS",
+  "TCS": "TCS.NS",
+  "RVNL": "RVNL.NS"
+};
 
-const select = document.getElementById("stockSelect");
-stocks.forEach(s => {
-  const opt = document.createElement("option");
-  opt.value = s;
-  opt.textContent = s;
-  select.appendChild(opt);
-});
-
-// Set today date
 document.getElementById("dateInput").valueAsDate = new Date();
 
-function random(min,max){ return (Math.random()*(max-min)+min).toFixed(2); }
-
-function generateMockCandle(){
-  let open = parseFloat(random(900,1100));
-  let high = open + parseFloat(random(2,20));
-  let low = open - parseFloat(random(2,20));
-  let close = parseFloat(random(low, high));
-  let volume = Math.floor(random(100000,5000000));
-  return {open, high, low, close, volume};
-}
-
-function calcRSI(closes){
-  let gains = 0, losses = 0;
-  for(let i=1;i<closes.length;i++){
-    let diff = closes[i] - closes[i-1];
-    if(diff>0) gains += diff;
-    else losses -= diff;
+function ema(values, period) {
+  const k = 2 / (period + 1);
+  let ema = values[0];
+  for (let i = 1; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
   }
-  let rs = gains / (losses || 1);
-  return (100 - (100/(1+rs))).toFixed(1);
+  return ema;
 }
 
-function loadStock(){
-  const stock = select.value;
-  const date = document.getElementById("dateInput").value;
-
-  // Generate fake historical
-  let candles = [];
-  for(let i=0;i<15;i++) candles.push(generateMockCandle());
-
-  const today = candles[candles.length-1];
-  const yesterday = candles[candles.length-2];
-
-  const pct = (((today.close - yesterday.close)/yesterday.close)*100).toFixed(2);
-  const color = pct >= 0 ? "green" : "red";
-
-  const ema = (candles.slice(-5).reduce((a,b)=>a+b.close,0)/5).toFixed(2);
-  const rsi = calcRSI(candles.map(c=>c.close));
-
-  const support = Math.min(...candles.map(c=>c.low)).toFixed(2);
-  const resistance = Math.max(...candles.map(c=>c.high)).toFixed(2);
-
-  let suggestion = "WAIT";
-  if(rsi < 35) suggestion = "BUY";
-  if(rsi > 70) suggestion = "SELL";
-
-  document.getElementById("output").innerHTML = `
-  <h3>${stock} (${date})</h3>
-
-  Open: ₹${today.open}<br>
-  High: ₹${today.high}<br>
-  Low: ₹${today.low}<br>
-  Close: ₹${today.close}<br>
-
-  % Change: <span class="${color}">${pct}%</span><br><br>
-
-  <b>Indicators</b><br>
-  EMA(5): ${ema}<br>
-  RSI(14): ${rsi}<br>
-  Support: ₹${support}<br>
-  Resistance: ₹${resistance}<br><br>
-
-  <b>Suggestions</b><br>
-  Intraday: ${suggestion}<br>
-  SL: ${(today.close * 0.98).toFixed(2)}<br>
-  Target: ${(today.close * 1.02).toFixed(2)}<br><br>
-
-  Delivery: ${rsi < 40 ? "ACCUMULATE" : "WAIT"}<br>
-  GTT Idea: Buy above ₹${resistance}<br>
-  `;
+function rsi(closes) {
+  let gains = 0, losses = 0;
+  for (let i = 1; i < closes.length; i++) {
+    let diff = closes[i] - closes[i - 1];
+    diff > 0 ? gains += diff : losses -= diff;
+  }
+  const rs = gains / (losses || 1);
+  return 100 - (100 / (1 + rs));
 }
 
-// Auto load latest
-loadStock();
+async function fetchYahoo(symbol) {
+  const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`
+  )}`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+  return data.chart.result[0];
+}
+
+async function loadTable() {
+  const tbody = document.getElementById("stockTable");
+  tbody.innerHTML = "";
+
+  for (let name in stocks) {
+    try {
+      const data = await fetchYahoo(stocks[name]);
+      const quote = data.indicators.quote[0];
+      const closes = quote.close.filter(v => v !== null);
+      const opens = quote.open.filter(v => v !== null);
+      const highs = quote.high.filter(v => v !== null);
+      const lows = quote.low.filter(v => v !== null);
+
+      const today = closes.length - 1;
+      const yesterday = closes.length - 2;
+
+      const open = opens[today];
+      const high = highs[today];
+      const low = lows[today];
+      const close = closes[today];
+
+      const pct = ((close - closes[yesterday]) / closes[yesterday]) * 100;
+      const pctClass = pct >= 0 ? "green" : "red";
+
+      const ema5 = ema(closes.slice(-10), 5);
+      const rsi14 = rsi(closes.slice(-15));
+      const support = Math.min(...lows.slice(-10));
+      const resistance = Math.max(...highs.slice(-10));
+
+      let signal = "WAIT";
+      if (rsi14 < 35) signal = "BUY";
+      if (rsi14 > 70) signal = "SELL";
+
+      const sl = close * 0.98;
+      const target = close * 1.02;
+
+      tbody.innerHTML += `
+        <tr>
+          <td><b>${name}</b></td>
+          <td>${open.toFixed(2)}</td>
+          <td>${high.toFixed(2)}</td>
+          <td>${low.toFixed(2)}</td>
+          <td>${close.toFixed(2)}</td>
+          <td class="${pctClass}">${pct.toFixed(2)}%</td>
+          <td>${ema5.toFixed(2)}</td>
+          <td>${rsi14.toFixed(1)}</td>
+          <td>${support.toFixed(2)}</td>
+          <td>${resistance.toFixed(2)}</td>
+          <td><b>${signal}</b></td>
+          <td>${sl.toFixed(2)}</td>
+          <td>${target.toFixed(2)}</td>
+        </tr>
+      `;
+    } catch (e) {
+      console.error(name, e);
+    }
+  }
+}
+
+loadTable();
 </script>
-
 </body>
 </html>
