@@ -5,196 +5,153 @@
 <title>Stock Dashboard Pro</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- PWA -->
-<link rel="manifest" href="manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
-:root {
-  --bg:#0f172a; --card:#111827; --border:#1f2937;
-  --text:#e5e7eb; --green:#22c55e; --red:#ef4444; --blue:#3b82f6;
-}
-body {margin:0;font-family:Arial;background:var(--bg);color:var(--text);}
-header {background:#020617;padding:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-.container {padding:16px;}
-.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
-table {width:100%;border-collapse:collapse;}
-th,td {padding:8px;border-bottom:1px solid var(--border);text-align:center;font-size:14px;}
-th {cursor:pointer;}
-.pos {color:var(--green);font-weight:bold;}
-.neg {color:var(--red);font-weight:bold;}
-input,button {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:8px;}
-button {cursor:pointer;}
-.controls {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.remove {color:red;cursor:pointer;font-weight:bold;}
-.spark {font-size:12px;opacity:.7;}
-@media(max-width:600px){
-  th,td{font-size:12px;padding:6px;}
-}
+body{margin:0;background:#0f172a;color:#e5e7eb;font-family:Arial}
+header{background:#020617;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+input,button{background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:6px}
+table{width:100%;border-collapse:collapse}
+td,th{padding:8px;border-bottom:1px solid #1f2937;text-align:center;font-size:14px}
+.pos{color:#22c55e;font-weight:bold}
+.neg{color:#ef4444;font-weight:bold}
+.card{margin:10px;background:#111827;padding:10px;border-radius:10px}
+.remove{color:#f87171;cursor:pointer;font-weight:bold}
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center}
 </style>
 </head>
-
 <body>
 
 <header>
-  📅 Date:
-  <input type="date" id="datePicker">
-  <button onclick="applyDate()">Submit</button>
+  📅 <input type="date" id="datePicker">
+  <button onclick="load()">Submit</button>
 
-  🔍 Search:
-  <input id="search" placeholder="Filter stocks">
+  🔍 <input id="search" placeholder="Search">
 
-  ➕ Add Stock:
-  <input id="addStock" placeholder="e.g. INFY">
+  ➕ <input id="addStock" placeholder="Add stock">
   <button onclick="addStock()">Add</button>
 
-  <button onclick="exportCSV()">⬇ Export CSV</button>
+  🔔 Alert:
+  <input id="alertSymbol" placeholder="SBIN">
+  <select id="alertType"><option value="above">Above</option><option value="below">Below</option></select>
+  <input id="alertPrice" type="number" placeholder="Price">
+  <button onclick="setPriceAlert()">Set</button>
+
+  <button onclick="exportXLSX()">Excel</button>
 </header>
 
-<div class="container">
-  <div class="card">
-    <h3>📊 Historical Stock Dashboard</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Stock</th>
-          <th>Low</th>
-          <th>High</th>
-          <th>Close</th>
-          <th>Volume</th>
-          <th>%</th>
-          <th>RSI</th>
-          <th>EMA</th>
-          <th>VWAP</th>
-          <th>Trend</th>
-          <th>❌</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+<div class="card">
+<table>
+<thead>
+<tr>
+<th>Stock</th><th>Low</th><th>High</th><th>Close</th><th>Volume</th>
+<th onclick="sortByChange()">%</th><th>RSI</th><th>EMA</th><th>VWAP</th><th>❌</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+
+<div class="modal" id="chartModal" onclick="closeChart()">
+  <div style="background:#111827;padding:20px;width:90%;max-width:700px">
+    <canvas id="chart"></canvas>
   </div>
 </div>
 
 <script>
-let stocks = JSON.parse(localStorage.getItem("stocks")) ||
-["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
+// ===================== CONFIG =====================
+const TELEGRAM_BOT_TOKEN = 8168507195:AAHXFWjfWqDZ4A4ZWnBIIsoc9wu2yp6uGmU;
+const TELEGRAM_CHAT_ID   = Joneskys_Bot;
+// ==================================================
 
+let stocks = JSON.parse(localStorage.getItem("stocks")) || ["SBIN","TCS","RVNL"];
 let tableData = [];
+let alerts = JSON.parse(localStorage.getItem("alerts") || "[]");
+let sortAsc = false;
 
-const yesterday = new Date();
-yesterday.setDate(yesterday.getDate()-1);
-document.getElementById("datePicker").valueAsDate = yesterday;
+document.getElementById("datePicker").valueAsDate = new Date();
 
-function saveStocks(){
-  localStorage.setItem("stocks", JSON.stringify(stocks));
-}
+function saveStocks(){ localStorage.setItem("stocks", JSON.stringify(stocks)); }
 
 function addStock(){
-  const s = document.getElementById("addStock").value.toUpperCase();
-  if(s && !stocks.includes(s)){
-    stocks.push(s);
-    saveStocks();
-    document.getElementById("addStock").value="";
-    load();
-  }
+  const s=document.getElementById("addStock").value.toUpperCase();
+  if(s && !stocks.includes(s)){stocks.push(s);saveStocks();load();}
 }
 
 function removeStock(s){
-  stocks = stocks.filter(x=>x!==s);
-  saveStocks();
-  load();
+  stocks=stocks.filter(x=>x!==s); saveStocks(); load();
 }
 
 document.getElementById("search").oninput = render;
 
-function toUnix(d){ return Math.floor(new Date(d).getTime()/1000); }
-
-async function safeFetch(url){
-  const proxies=[
-    u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
-    u=>"https://corsproxy.io/?"+encodeURIComponent(u),
-    u=>"https://thingproxy.freeboard.io/fetch/"+u
-  ];
-  for(let p of proxies){
-    try{
-      const r=await fetch(p(url));
-      if(r.ok) return await r.json();
-    }catch{}
-  }
-  throw "fail";
-}
-
-async function fetchSeries(symbol,date){
-  const start = toUnix(date)-86400*30;
-  const end = toUnix(date)+86400*2;
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
-  const json = await safeFetch(url);
-  const r=json.chart?.result?.[0];
+async function fetchSeries(symbol){
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?range=1mo&interval=1d`;
+  const proxy="https://api.allorigins.win/raw?url=";
+  const res=await fetch(proxy+encodeURIComponent(url));
+  const j=await res.json();
+  const r=j.chart.result?.[0];
   if(!r) return null;
-
+  const t=r.timestamp;
   const q=r.indicators.quote[0];
-  let candles=[];
-  for(let i=0;i<q.close.length;i++){
-    if(q.close[i]) candles.push({
-      close:q.close[i],low:q.low[i],high:q.high[i],volume:q.volume[i]
-    });
+  let arr=[];
+  for(let i=0;i<t.length;i++){
+    if(q.close[i]) arr.push({t:t[i],open:q.open[i],high:q.high[i],low:q.low[i],close:q.close[i],volume:q.volume[i]});
   }
-  return candles;
+  return arr;
 }
 
-// indicators
-function ema(values, period){
-  let k=2/(period+1), ema=values[0];
-  for(let i=1;i<values.length;i++) ema=values[i]*k+ema*(1-k);
-  return ema;
-}
-
-function rsi(values, period=14){
-  if(values.length<period+1) return null;
-  let gains=0, losses=0;
-  for(let i=1;i<=period;i++){
-    let diff=values[i]-values[i-1];
-    if(diff>=0) gains+=diff; else losses-=diff;
+function rsi(values,p=14){
+  if(values.length<p+1) return null;
+  let gains=0,losses=0;
+  for(let i=1;i<=p;i++){
+    let d=values[i]-values[i-1];
+    if(d>=0) gains+=d; else losses-=d;
   }
-  let rs = gains/(losses||1);
+  let rs=gains/(losses||1);
   return 100-(100/(1+rs));
 }
 
-function vwap(values, volumes){
-  let num=0, den=0;
-  for(let i=0;i<values.length;i++){
-    num += values[i]*volumes[i];
-    den += volumes[i];
-  }
-  return num/den;
+function ema(values,p=14){
+  let k=2/(p+1),e=values[0];
+  for(let i=1;i<values.length;i++) e=values[i]*k+e*(1-k);
+  return e;
+}
+
+function vwap(c,v){
+  let n=0,d=0;
+  for(let i=0;i<c.length;i++){n+=c[i]*v[i];d+=v[i]}
+  return n/d;
 }
 
 async function load(){
-  const date=document.getElementById("datePicker").value;
   tableData=[];
-  document.getElementById("tbody").innerHTML="<tr><td colspan='11'>Loading...</td></tr>";
+  const tbody=document.getElementById("tbody");
+  tbody.innerHTML="<tr><td colspan='10'>Loading...</td></tr>";
 
   for(let s of stocks){
     try{
-      const series = await fetchSeries(s,date);
-      if(!series || series.length<2) continue;
+      const series=await fetchSeries(s);
+      if(!series||series.length<2) continue;
 
-      const today=series[series.length-1];
-      const prev=series[series.length-2];
+      const t=series.at(-1), p=series.at(-2);
       const closes=series.map(x=>x.close);
       const vols=series.map(x=>x.volume);
 
       tableData.push({
         symbol:s,
-        ...today,
-        change:((today.close-prev.close)/prev.close)*100,
+        ...t,
+        change:(t.close-p.close)/p.close*100,
         rsi:rsi(closes),
-        ema:ema(closes,14),
+        ema:ema(closes),
         vwap:vwap(closes,vols),
-        spark:closes.slice(-10)
+        series
       });
     }catch{}
   }
   render();
+  checkAlerts();
 }
 
 function render(){
@@ -202,45 +159,89 @@ function render(){
   const tbody=document.getElementById("tbody");
   tbody.innerHTML="";
 
-  tableData.filter(r=>!q || r.symbol.toLowerCase().includes(q))
+  tableData.filter(r=>!q||r.symbol.toLowerCase().includes(q))
   .forEach(r=>{
-    const cls=r.change>=0?"pos":"neg";
-    const spark=r.spark.map(v=>v>r.spark[0]?"▴":"▾").join("");
-
     tbody.innerHTML+=`
-      <tr>
+      <tr onclick="showChart('${r.symbol}')">
         <td>${r.symbol}</td>
         <td>${r.low.toFixed(2)}</td>
         <td>${r.high.toFixed(2)}</td>
         <td>${r.close.toFixed(2)}</td>
         <td>${r.volume.toLocaleString()}</td>
-        <td class="${cls}">${r.change>0?"+":""}${r.change.toFixed(2)}%</td>
-        <td>${r.rsi? r.rsi.toFixed(1):"-"}</td>
-        <td>${r.ema? r.ema.toFixed(2):"-"}</td>
-        <td>${r.vwap? r.vwap.toFixed(2):"-"}</td>
-        <td class="spark">${spark}</td>
-        <td class="remove" onclick="removeStock('${r.symbol}')">✕</td>
+        <td class="${r.change>=0?'pos':'neg'}">${r.change.toFixed(2)}%</td>
+        <td>${r.rsi?.toFixed(1)||"-"}</td>
+        <td>${r.ema?.toFixed(1)||"-"}</td>
+        <td>${r.vwap?.toFixed(1)||"-"}</td>
+        <td class="remove" onclick="event.stopPropagation();removeStock('${r.symbol}')">✕</td>
       </tr>`;
   });
 }
 
-function applyDate(){ load(); }
-
-function exportCSV(){
-  let csv="Stock,Low,High,Close,Volume,Change,RSI,EMA,VWAP\n";
-  tableData.forEach(r=>{
-    csv+=`${r.symbol},${r.low},${r.high},${r.close},${r.volume},${r.change.toFixed(2)},${r.rsi?.toFixed(2)},${r.ema?.toFixed(2)},${r.vwap?.toFixed(2)}\n`;
-  });
-  const blob=new Blob([csv],{type:"text/csv"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="stocks.csv";
-  a.click();
+function sortByChange(){
+  tableData.sort((a,b)=>sortAsc?a.change-b.change:b.change-a.change);
+  sortAsc=!sortAsc; render();
 }
 
-// initial load
+// ===== Candlestick chart =====
+let chart;
+function showChart(sym){
+  const r=tableData.find(x=>x.symbol===sym);
+  const data=r.series.map(x=>({x:new Date(x.t*1000),o:x.open,h:x.high,l:x.low,c:x.close}));
+  document.getElementById("chartModal").style.display="flex";
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("chart"),{
+    type:"candlestick",
+    data:{datasets:[{label:sym,data}]}
+  });
+}
+function closeChart(){document.getElementById("chartModal").style.display="none"}
+
+// ===== Excel export =====
+function exportXLSX(){
+  const ws=XLSX.utils.json_to_sheet(tableData.map(r=>({
+    Stock:r.symbol,Low:r.low,High:r.high,Close:r.close,Volume:r.volume,
+    Change:r.change.toFixed(2),RSI:r.rsi?.toFixed(2),EMA:r.ema?.toFixed(2),VWAP:r.vwap?.toFixed(2)
+  })));
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Stocks");
+  XLSX.writeFile(wb,"stocks.xlsx");
+}
+
+// ===== Telegram Alerts =====
+function setPriceAlert(){
+  const sym=document.getElementById("alertSymbol").value.toUpperCase();
+  const type=document.getElementById("alertType").value;
+  const price=parseFloat(document.getElementById("alertPrice").value);
+  if(!sym||!price) return alert("Invalid input");
+  alerts.push({sym,type,price});
+  localStorage.setItem("alerts",JSON.stringify(alerts));
+  alert("Alert set");
+}
+
+function checkAlerts(){
+  tableData.forEach(r=>{
+    alerts.forEach((a,i)=>{
+      if(a.sym!==r.symbol) return;
+      if(a.type==="above" && r.close>=a.price) sendAlert(a,r.close,i);
+      if(a.type==="below" && r.close<=a.price) sendAlert(a,r.close,i);
+    });
+  });
+}
+
+function sendAlert(a,price,index){
+  const text=`🔔 ALERT HIT\n${a.sym} ${a.type.toUpperCase()} ${a.price}\nLTP: ${price}`;
+  fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({chat_id:TELEGRAM_CHAT_ID,text})
+  });
+  alerts.splice(index,1);
+  localStorage.setItem("alerts",JSON.stringify(alerts));
+}
+
+// auto refresh every 30s
+setInterval(load,30000);
 load();
 </script>
-
 </body>
 </html>
