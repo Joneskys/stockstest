@@ -1,150 +1,181 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Real Stock Dashboard (Yahoo Finance)</title>
+  <title>Advanced Stock Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
+
   <style>
     body { font-family: Arial; padding: 20px; }
     table { border-collapse: collapse; width: 100%; font-size: 14px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
-    th { background: #f2f2f2; position: sticky; top: 0; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; cursor:pointer; }
+    th { background: #f2f2f2; }
     .green { color: green; font-weight: bold; }
     .red { color: red; font-weight: bold; }
-    input, button { padding: 6px; margin: 6px; }
+    .controls { margin-bottom: 10px; }
+    #chartBox { display:none; background:#fff; padding:20px; border:2px solid #333; position:fixed; top:5%; left:5%; width:90%; height:90%; }
   </style>
 </head>
 <body>
 
-<h2>📊 Real Stock Dashboard (Yahoo Finance)</h2>
+<h2>📊 Advanced Real Stock Dashboard</h2>
 
-<label>Select Date:</label>
-<input type="date" id="dateInput">
-<button onclick="loadTable()">Submit</button>
+<div class="controls">
+  <label>Date:</label>
+  <input type="date" id="dateInput">
+  <button onclick="loadTable()">Submit</button>
+  <label><input type="checkbox" id="buyOnly" onchange="renderTable()"> Show BUY only</label>
+</div>
 
 <table>
   <thead>
     <tr>
       <th>Stock</th>
+      <th onclick="sortByChange()">% Change ⬍</th>
       <th>Open</th>
       <th>High</th>
       <th>Low</th>
       <th>Close</th>
-      <th>% Change</th>
       <th>EMA(5)</th>
-      <th>RSI(14)</th>
+      <th>RSI</th>
       <th>Support</th>
       <th>Resistance</th>
       <th>Signal</th>
-      <th>SL</th>
-      <th>Target</th>
     </tr>
   </thead>
   <tbody id="stockTable"></tbody>
 </table>
 
+<div id="chartBox">
+  <button onclick="closeChart()">Close</button>
+  <canvas id="candleChart"></canvas>
+</div>
+
 <script>
 const stocks = {
-  "SAGILITY": "SAGILITY.NS",
-  "GROWWGOLD": "GROWWGOLD.NS",
-  "JPPOWER": "JPPOWER.NS",
-  "IDEA": "IDEA.NS",
-  "BSE": "BSE.NS",
-  "HDFCBANK": "HDFCBANK.NS",
-  "SBIN": "SBIN.NS",
-  "TCS": "TCS.NS",
-  "RVNL": "RVNL.NS"
+  SBIN:"SBIN.NS",
+  HDFCBANK:"HDFCBANK.NS",
+  TCS:"TCS.NS",
+  RVNL:"RVNL.NS",
+  IDEA:"IDEA.NS",
+  JPPOWER:"JPPOWER.NS"
 };
 
+let stockData = [];
+let sortAsc = false;
 document.getElementById("dateInput").valueAsDate = new Date();
 
-function ema(values, period) {
-  const k = 2 / (period + 1);
-  let ema = values[0];
-  for (let i = 1; i < values.length; i++) {
-    ema = values[i] * k + ema * (1 - k);
-  }
-  return ema;
+function ema(values, p){
+  let k = 2/(p+1), e = values[0];
+  for(let i=1;i<values.length;i++) e = values[i]*k + e*(1-k);
+  return e;
 }
 
-function rsi(closes) {
-  let gains = 0, losses = 0;
-  for (let i = 1; i < closes.length; i++) {
-    let diff = closes[i] - closes[i - 1];
-    diff > 0 ? gains += diff : losses -= diff;
+function rsi(values){
+  let g=0,l=0;
+  for(let i=1;i<values.length;i++){
+    let d = values[i]-values[i-1];
+    d>0?g+=d:l-=d;
   }
-  const rs = gains / (losses || 1);
-  return 100 - (100 / (1 + rs));
+  let rs=g/(l||1);
+  return 100-(100/(1+rs));
 }
 
-async function fetchYahoo(symbol) {
-  const url = `https://api.allorigins.win/raw?url=${encodeURIComponent(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=1mo&interval=1d`
+async function fetchYahoo(symbol){
+  const url=`https://corsproxy.io/?${encodeURIComponent(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`
   )}`;
-
-  const res = await fetch(url);
-  const data = await res.json();
-  return data.chart.result[0];
+  const r=await fetch(url);
+  return (await r.json()).chart.result[0];
 }
 
-async function loadTable() {
-  const tbody = document.getElementById("stockTable");
-  tbody.innerHTML = "";
+async function loadTable(){
+  stockData=[];
+  for(const name in stocks){
+    try{
+      const d = await fetchYahoo(stocks[name]);
+      const q=d.indicators.quote[0];
+      const c=q.close.filter(x=>x!=null);
+      const o=q.open.filter(x=>x!=null);
+      const h=q.high.filter(x=>x!=null);
+      const l=q.low.filter(x=>x!=null);
 
-  for (let name in stocks) {
-    try {
-      const data = await fetchYahoo(stocks[name]);
-      const quote = data.indicators.quote[0];
-      const closes = quote.close.filter(v => v !== null);
-      const opens = quote.open.filter(v => v !== null);
-      const highs = quote.high.filter(v => v !== null);
-      const lows = quote.low.filter(v => v !== null);
+      let i=c.length-1;
+      let pct=((c[i]-c[i-1])/c[i-1])*100;
+      let ema5=ema(c.slice(-10),5);
+      let r=rsi(c.slice(-15));
+      let sup=Math.min(...l.slice(-10));
+      let res=Math.max(...h.slice(-10));
 
-      const today = closes.length - 1;
-      const yesterday = closes.length - 2;
+      let sig="WAIT";
+      if(r<35) sig="BUY";
+      if(r>70) sig="SELL";
 
-      const open = opens[today];
-      const high = highs[today];
-      const low = lows[today];
-      const close = closes[today];
-
-      const pct = ((close - closes[yesterday]) / closes[yesterday]) * 100;
-      const pctClass = pct >= 0 ? "green" : "red";
-
-      const ema5 = ema(closes.slice(-10), 5);
-      const rsi14 = rsi(closes.slice(-15));
-      const support = Math.min(...lows.slice(-10));
-      const resistance = Math.max(...highs.slice(-10));
-
-      let signal = "WAIT";
-      if (rsi14 < 35) signal = "BUY";
-      if (rsi14 > 70) signal = "SELL";
-
-      const sl = close * 0.98;
-      const target = close * 1.02;
-
-      tbody.innerHTML += `
-        <tr>
-          <td><b>${name}</b></td>
-          <td>${open.toFixed(2)}</td>
-          <td>${high.toFixed(2)}</td>
-          <td>${low.toFixed(2)}</td>
-          <td>${close.toFixed(2)}</td>
-          <td class="${pctClass}">${pct.toFixed(2)}%</td>
-          <td>${ema5.toFixed(2)}</td>
-          <td>${rsi14.toFixed(1)}</td>
-          <td>${support.toFixed(2)}</td>
-          <td>${resistance.toFixed(2)}</td>
-          <td><b>${signal}</b></td>
-          <td>${sl.toFixed(2)}</td>
-          <td>${target.toFixed(2)}</td>
-        </tr>
-      `;
-    } catch (e) {
-      console.error(name, e);
-    }
+      stockData.push({name,pct,o:o[i],h:h[i],l:l[i],c:c[i],ema5,r,sup,res,sig,raw:d});
+    }catch(e){}
   }
+  renderTable();
+}
+
+function renderTable(){
+  let tbody=document.getElementById("stockTable");
+  tbody.innerHTML="";
+  let onlyBuy=document.getElementById("buyOnly").checked;
+
+  stockData.forEach(s=>{
+    if(onlyBuy && s.sig!=="BUY") return;
+    let col=s.pct>=0?"green":"red";
+
+    tbody.innerHTML+=`
+      <tr onclick="showChart('${s.name}')">
+        <td><b>${s.name}</b></td>
+        <td class="${col}">${s.pct.toFixed(2)}%</td>
+        <td>${s.o.toFixed(2)}</td>
+        <td>${s.h.toFixed(2)}</td>
+        <td>${s.l.toFixed(2)}</td>
+        <td>${s.c.toFixed(2)}</td>
+        <td>${s.ema5.toFixed(2)}</td>
+        <td>${s.r.toFixed(1)}</td>
+        <td>${s.sup.toFixed(2)}</td>
+        <td>${s.res.toFixed(2)}</td>
+        <td><b>${s.sig}</b></td>
+      </tr>`;
+  });
+}
+
+function sortByChange(){
+  stockData.sort((a,b)=>sortAsc?a.pct-b.pct:b.pct-a.pct);
+  sortAsc=!sortAsc;
+  renderTable();
+}
+
+let chart;
+function showChart(name){
+  const stock=stockData.find(s=>s.name===name);
+  const q=stock.raw.indicators.quote[0];
+  const ts=stock.raw.timestamp;
+
+  const candles=ts.map((t,i)=>({
+    x:new Date(t*1000),
+    o:q.open[i],h:q.high[i],l:q.low[i],c:q.close[i]
+  })).filter(c=>c.o);
+
+  document.getElementById("chartBox").style.display="block";
+
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById("candleChart"),{
+    type:"candlestick",
+    data:{datasets:[{label:name,data:candles}]}
+  });
+}
+
+function closeChart(){
+  document.getElementById("chartBox").style.display="none";
 }
 
 loadTable();
+setInterval(loadTable,60000); // auto refresh every 1 min
 </script>
+
 </body>
 </html>
