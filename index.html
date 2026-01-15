@@ -1,181 +1,84 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Advanced Stock Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial"></script>
-
+  <title>NSE Live Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: Arial; padding: 20px; }
-    table { border-collapse: collapse; width: 100%; font-size: 14px; }
-    th, td { border: 1px solid #ccc; padding: 6px; text-align: center; cursor:pointer; }
-    th { background: #f2f2f2; }
-    .green { color: green; font-weight: bold; }
-    .red { color: red; font-weight: bold; }
-    .controls { margin-bottom: 10px; }
-    #chartBox { display:none; background:#fff; padding:20px; border:2px solid #333; position:fixed; top:5%; left:5%; width:90%; height:90%; }
+    body { font-family: Arial; padding: 10px; }
+    .box { margin-bottom: 30px; }
   </style>
 </head>
 <body>
 
-<h2>📊 Advanced Real Stock Dashboard</h2>
+<h2>📈 NSE Live Stock Dashboard (Pure HTML)</h2>
 
-<div class="controls">
-  <label>Date:</label>
-  <input type="date" id="dateInput">
-  <button onclick="loadTable()">Submit</button>
-  <label><input type="checkbox" id="buyOnly" onchange="renderTable()"> Show BUY only</label>
+<!-- 🔥 NSE SCREENER -->
+<div class="box">
+  <h3>📊 NSE Screener (RSI, Volume, Breakout filters available)</h3>
+  <div class="tradingview-widget-container">
+    <div id="tv-screener"></div>
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-screener.js" async>
+    {
+      "width": "100%",
+      "height": 600,
+      "defaultColumn": "overview",
+      "screener_type": "stock",
+      "exchange": "NSE",
+      "colorTheme": "light",
+      "locale": "en"
+    }
+    </script>
+  </div>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>Stock</th>
-      <th onclick="sortByChange()">% Change ⬍</th>
-      <th>Open</th>
-      <th>High</th>
-      <th>Low</th>
-      <th>Close</th>
-      <th>EMA(5)</th>
-      <th>RSI</th>
-      <th>Support</th>
-      <th>Resistance</th>
-      <th>Signal</th>
-    </tr>
-  </thead>
-  <tbody id="stockTable"></tbody>
-</table>
-
-<div id="chartBox">
-  <button onclick="closeChart()">Close</button>
-  <canvas id="candleChart"></canvas>
+<!-- 📋 YOUR WATCHLIST -->
+<div class="box">
+  <h3>📋 Your Watchlist</h3>
+  <div class="tradingview-widget-container">
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
+    {
+      "width": "100%",
+      "height": 450,
+      "symbolsGroups": [
+        {
+          "name": "My Stocks",
+          "symbols": [
+            {"name": "NSE:SBIN"},
+            {"name": "NSE:HDFCBANK"},
+            {"name": "NSE:TCS"},
+            {"name": "NSE:RVNL"},
+            {"name": "NSE:IDEA"},
+            {"name": "NSE:JPPOWER"}
+          ]
+        }
+      ],
+      "colorTheme": "light",
+      "isTransparent": false,
+      "locale": "en"
+    }
+    </script>
+  </div>
 </div>
 
-<script>
-const stocks = {
-  SBIN:"SBIN.NS",
-  HDFCBANK:"HDFCBANK.NS",
-  TCS:"TCS.NS",
-  RVNL:"RVNL.NS",
-  IDEA:"IDEA.NS",
-  JPPOWER:"JPPOWER.NS"
-};
-
-let stockData = [];
-let sortAsc = false;
-document.getElementById("dateInput").valueAsDate = new Date();
-
-function ema(values, p){
-  let k = 2/(p+1), e = values[0];
-  for(let i=1;i<values.length;i++) e = values[i]*k + e*(1-k);
-  return e;
-}
-
-function rsi(values){
-  let g=0,l=0;
-  for(let i=1;i<values.length;i++){
-    let d = values[i]-values[i-1];
-    d>0?g+=d:l-=d;
-  }
-  let rs=g/(l||1);
-  return 100-(100/(1+rs));
-}
-
-async function fetchYahoo(symbol){
-  const url=`https://corsproxy.io/?${encodeURIComponent(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3mo&interval=1d`
-  )}`;
-  const r=await fetch(url);
-  return (await r.json()).chart.result[0];
-}
-
-async function loadTable(){
-  stockData=[];
-  for(const name in stocks){
-    try{
-      const d = await fetchYahoo(stocks[name]);
-      const q=d.indicators.quote[0];
-      const c=q.close.filter(x=>x!=null);
-      const o=q.open.filter(x=>x!=null);
-      const h=q.high.filter(x=>x!=null);
-      const l=q.low.filter(x=>x!=null);
-
-      let i=c.length-1;
-      let pct=((c[i]-c[i-1])/c[i-1])*100;
-      let ema5=ema(c.slice(-10),5);
-      let r=rsi(c.slice(-15));
-      let sup=Math.min(...l.slice(-10));
-      let res=Math.max(...h.slice(-10));
-
-      let sig="WAIT";
-      if(r<35) sig="BUY";
-      if(r>70) sig="SELL";
-
-      stockData.push({name,pct,o:o[i],h:h[i],l:l[i],c:c[i],ema5,r,sup,res,sig,raw:d});
-    }catch(e){}
-  }
-  renderTable();
-}
-
-function renderTable(){
-  let tbody=document.getElementById("stockTable");
-  tbody.innerHTML="";
-  let onlyBuy=document.getElementById("buyOnly").checked;
-
-  stockData.forEach(s=>{
-    if(onlyBuy && s.sig!=="BUY") return;
-    let col=s.pct>=0?"green":"red";
-
-    tbody.innerHTML+=`
-      <tr onclick="showChart('${s.name}')">
-        <td><b>${s.name}</b></td>
-        <td class="${col}">${s.pct.toFixed(2)}%</td>
-        <td>${s.o.toFixed(2)}</td>
-        <td>${s.h.toFixed(2)}</td>
-        <td>${s.l.toFixed(2)}</td>
-        <td>${s.c.toFixed(2)}</td>
-        <td>${s.ema5.toFixed(2)}</td>
-        <td>${s.r.toFixed(1)}</td>
-        <td>${s.sup.toFixed(2)}</td>
-        <td>${s.res.toFixed(2)}</td>
-        <td><b>${s.sig}</b></td>
-      </tr>`;
-  });
-}
-
-function sortByChange(){
-  stockData.sort((a,b)=>sortAsc?a.pct-b.pct:b.pct-a.pct);
-  sortAsc=!sortAsc;
-  renderTable();
-}
-
-let chart;
-function showChart(name){
-  const stock=stockData.find(s=>s.name===name);
-  const q=stock.raw.indicators.quote[0];
-  const ts=stock.raw.timestamp;
-
-  const candles=ts.map((t,i)=>({
-    x:new Date(t*1000),
-    o:q.open[i],h:q.high[i],l:q.low[i],c:q.close[i]
-  })).filter(c=>c.o);
-
-  document.getElementById("chartBox").style.display="block";
-
-  if(chart) chart.destroy();
-  chart=new Chart(document.getElementById("candleChart"),{
-    type:"candlestick",
-    data:{datasets:[{label:name,data:candles}]}
-  });
-}
-
-function closeChart(){
-  document.getElementById("chartBox").style.display="none";
-}
-
-loadTable();
-setInterval(loadTable,60000); // auto refresh every 1 min
-</script>
+<!-- 📈 ADVANCED CHART -->
+<div class="box">
+  <h3>📈 Click any stock → full candlestick chart</h3>
+  <div class="tradingview-widget-container">
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+    {
+      "autosize": true,
+      "symbol": "NSE:SBIN",
+      "interval": "5",
+      "timezone": "Asia/Kolkata",
+      "theme": "light",
+      "style": "1",
+      "locale": "en",
+      "enable_publishing": false,
+      "allow_symbol_change": true
+    }
+    </script>
+  </div>
+</div>
 
 </body>
 </html>
