@@ -2,37 +2,46 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Historical Stock Dashboard</title>
+<title>Advanced Stock Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 :root {
   --bg:#0f172a; --card:#111827; --border:#1f2937;
-  --text:#e5e7eb; --green:#22c55e; --red:#ef4444;
+  --text:#e5e7eb; --green:#22c55e; --red:#ef4444; --blue:#3b82f6;
 }
 body { margin:0; font-family:Arial; background:var(--bg); color:var(--text);}
-header {background:#020617;padding:12px;border-bottom:1px solid var(--border);}
-.container {padding:16px;}
-.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
+header {background:#020617;padding:12px;}
+.container {padding:14px;}
+.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
 table {width:100%;border-collapse:collapse;}
-th,td {padding:12px;border-bottom:1px solid var(--border);text-align:center;}
+th,td {padding:10px;border-bottom:1px solid var(--border);text-align:center;}
+th {cursor:pointer;}
 .pos {color:var(--green);font-weight:bold;}
 .neg {color:var(--red);font-weight:bold;}
-input {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:8px;}
+.controls {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+input,button {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:8px;}
+button {cursor:pointer;}
+.mobile {font-size:13px;}
+@media(max-width:600px){
+  table, th, td {font-size:12px;}
+}
 </style>
 </head>
 
 <body>
 
 <header>
-  <span>📅 Date: 
-    <input type="date" id="datePicker">
-  </span>
+  <div class="controls">
+    📅 Date 1: <input type="date" id="date1">
+    📅 Date 2: <input type="date" id="date2">
+    <button onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
 </header>
 
 <div class="container">
   <div class="card">
-    <h3>Historical Stock Data</h3>
+    <h3>📊 Historical Stock Data</h3>
     <table>
       <thead>
         <tr>
@@ -40,7 +49,8 @@ input {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius
           <th>Low</th>
           <th>High</th>
           <th>Close</th>
-          <th>% Change</th>
+          <th>Volume</th>
+          <th onclick="sortByChange()">% Change ⬍</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -49,93 +59,110 @@ input {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius
 </div>
 
 <script>
-const stocks = ["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
+let stocks = JSON.parse(localStorage.getItem("stocks")) ||
+["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
 
-// default date = yesterday
-const yesterday = new Date();
-yesterday.setDate(yesterday.getDate() - 1);
-document.getElementById("datePicker").valueAsDate = yesterday;
+let sortAsc=false;
+let tableData=[];
 
-function toUnix(dateStr){
-  return Math.floor(new Date(dateStr).getTime() / 1000);
-}
+const today=new Date();
+const yest=new Date(); yest.setDate(today.getDate()-1);
+document.getElementById("date1").valueAsDate=yest;
+document.getElementById("date2").valueAsDate=today;
 
-// Try multiple proxies (auto fallback)
+function toUnix(d){ return Math.floor(new Date(d).getTime()/1000); }
+
 async function safeFetch(url){
-  const proxies = [
-    u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-    u => "https://corsproxy.io/?" + encodeURIComponent(u),
-    u => "https://thingproxy.freeboard.io/fetch/" + u
+  const proxies=[
+    u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
+    u=>"https://corsproxy.io/?"+encodeURIComponent(u),
+    u=>"https://thingproxy.freeboard.io/fetch/"+u
   ];
-
-  for (let p of proxies){
-    try {
-      const res = await fetch(p(url));
-      if(res.ok) return await res.json();
-    } catch(e){}
+  for(let p of proxies){
+    try{
+      let r=await fetch(p(url));
+      if(r.ok) return await r.json();
+    }catch{}
   }
-  throw "All proxies failed";
+  throw "Failed";
 }
 
-// Fetch historical candle safely
-async function fetchCandle(symbol, date){
-  const start = toUnix(date) - 86400 * 5;
-  const end   = toUnix(date) + 86400 * 2;
-
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
-  const json = await safeFetch(url);
-
-  const r = json.chart?.result?.[0];
+async function fetchCandle(symbol,date){
+  const start=toUnix(date)-86400*10;
+  const end=toUnix(date)+86400*2;
+  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
+  const json=await safeFetch(url);
+  const r=json.chart?.result?.[0];
   if(!r) return null;
 
-  const q = r.indicators.quote[0];
-
-  // find last valid candle
-  for(let i=q.close.length-1; i>=0; i--){
-    if(q.close[i] && q.low[i] && q.high[i]){
-      return {
-        close: q.close[i],
-        low: q.low[i],
-        high: q.high[i],
-        prevClose: r.meta.previousClose
-      };
-    }
+  const q=r.indicators.quote[0];
+  let candles=[];
+  for(let i=0;i<q.close.length;i++){
+    if(q.close[i]) candles.push({
+      close:q.close[i],low:q.low[i],high:q.high[i],volume:q.volume[i]
+    });
   }
-  return null;
+  if(candles.length<1) return null;
+  return candles[candles.length-1];
 }
 
-async function loadData(){
-  const date = document.getElementById("datePicker").value;
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
+async function load(){
+  tableData=[];
+  const d1=document.getElementById("date1").value;
+  const d2=document.getElementById("date2").value;
 
   for(let s of stocks){
     try{
-      const d = await fetchCandle(s, date);
-      if(!d){
-        tbody.innerHTML += `<tr><td>${s}</td><td colspan="4">No data</td></tr>`;
-        continue;
-      }
+      const c1=await fetchCandle(s,d1);
+      const c2=await fetchCandle(s,d2);
+      if(!c1||!c2) continue;
 
-      const ch = ((d.close - d.prevClose)/d.prevClose)*100;
-      const cls = ch >= 0 ? "pos" : "neg";
-
-      tbody.innerHTML += `
-        <tr>
-          <td>${s}</td>
-          <td>${d.low.toFixed(2)}</td>
-          <td>${d.high.toFixed(2)}</td>
-          <td>${d.close.toFixed(2)}</td>
-          <td class="${cls}">${ch.toFixed(2)}%</td>
-        </tr>`;
-    } catch(e){
-      tbody.innerHTML += `<tr><td>${s}</td><td colspan="4">Error</td></tr>`;
-    }
+      const ch=((c2.close-c1.close)/c1.close)*100;
+      tableData.push({...c2,symbol:s,change:ch});
+    }catch{}
   }
+  render();
 }
 
-document.getElementById("datePicker").addEventListener("change", loadData);
-loadData();
+function render(){
+  const tbody=document.getElementById("tbody");
+  tbody.innerHTML="";
+  tableData.forEach(r=>{
+    const cls=r.change>=0?"pos":"neg";
+    tbody.innerHTML+=`
+      <tr title="Mini trend for ${r.symbol}">
+        <td>${r.symbol}</td>
+        <td>${r.low.toFixed(2)}</td>
+        <td>${r.high.toFixed(2)}</td>
+        <td>${r.close.toFixed(2)}</td>
+        <td>${r.volume.toLocaleString()}</td>
+        <td class="${cls}">${r.change>0?"+":""}${r.change.toFixed(2)}%</td>
+      </tr>`;
+  });
+}
+
+function sortByChange(){
+  tableData.sort((a,b)=>sortAsc?a.change-b.change:b.change-a.change);
+  sortAsc=!sortAsc;
+  render();
+}
+
+function exportCSV(){
+  let csv="Stock,Low,High,Close,Volume,Change\n";
+  tableData.forEach(r=>{
+    csv+=`${r.symbol},${r.low},${r.high},${r.close},${r.volume},${r.change.toFixed(2)}%\n`;
+  });
+  const blob=new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="stocks.csv";
+  a.click();
+}
+
+document.getElementById("date1").onchange=load;
+document.getElementById("date2").onchange=load;
+
+load();
 </script>
 
 </body>
