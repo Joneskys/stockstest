@@ -1,52 +1,6 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Auto Stock Dashboard</title>
-<style>
-body { font-family: Arial; padding:20px; }
-table { border-collapse: collapse; width:100%; font-size:13px; }
-th, td { border:1px solid #ccc; padding:6px; text-align:center; }
-th { background:#f2f2f2; position:sticky; top:0; }
-.green { color:green; font-weight:bold; }
-.red { color:red; font-weight:bold; }
-</style>
-</head>
-<body>
-
-<h2>📊 Auto Stock Dashboard</h2>
-
-Date:
-<input type="date" id="datePicker">
-<button onclick="loadData()">Submit</button>
-
-<table>
-<thead>
-<tr>
-<th>Stock</th>
-<th>Open</th>
-<th>High</th>
-<th>Low</th>
-<th>Close</th>
-<th>% Change</th>
-<th>RSI</th>
-<th>EMA</th>
-<th>Volume</th>
-<th>Support</th>
-<th>Resistance</th>
-<th>Signal</th>
-<th>SL</th>
-<th>Target</th>
-<th>Delivery</th>
-<th>GTT</th>
-</tr>
-</thead>
-<tbody id="tbody"></tbody>
-</table>
-
 <script>
-const API = "YOUR_API_KEY";
+const API = "24a29d9d19ad43b48da9099cba1ec955";
 
-// Your stocks
 const stocks = [
 "SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWLSILVER",
 "HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100",
@@ -58,48 +12,56 @@ document.getElementById("datePicker").valueAsDate = new Date();
 async function loadData(){
   const date = document.getElementById("datePicker").value;
   const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "Loading...";
+  tbody.innerHTML = "";
 
-  let rows = "";
+  for (const stock of stocks) {
+    try {
+      const symbol = `${stock}.NSE`;
+      const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=100&apikey=${API}`;
 
-  for(const stock of stocks){
-    try{
-      const url = `https://api.twelvedata.com/time_series?symbol=${stock}.NSE&interval=1day&apikey=${API}&outputsize=50`;
       const res = await fetch(url);
       const json = await res.json();
 
+      if (json.status === "error") {
+        throw json.message;
+      }
+
       const series = json.values;
       const today = series.find(x => x.datetime === date);
-      const prev = series[series.indexOf(today)+1];
+      const idx = series.indexOf(today);
 
-      if(!today || !prev) continue;
+      if (!today || idx + 1 >= series.length) {
+        tbody.innerHTML += `<tr><td colspan="16">${stock}: No data for ${date}</td></tr>`;
+        continue;
+      }
+
+      const prev = series[idx + 1];
 
       const o = +today.open, h = +today.high, l = +today.low, c = +today.close;
       const vol = +today.volume;
-      const pct = ((c - prev.close)/prev.close)*100;
-
-      const cls = pct >= 0 ? "green" : "red";
+      const pct = ((c - prev.close) / prev.close) * 100;
+      const color = pct >= 0 ? "green" : "red";
 
       const ema = c * 0.98;
-      const rsi = 40 + Math.random()*30;
+      const rsi = 40 + Math.random() * 30;
       const support = l;
       const resistance = h;
 
       let signal = "WAIT";
-      if(rsi < 35) signal = "BUY";
-      if(rsi > 70) signal = "SELL";
+      if (rsi < 35) signal = "BUY";
+      if (rsi > 70) signal = "SELL";
 
       const sl = (c * 0.98).toFixed(2);
       const target = (c * 1.03).toFixed(2);
 
-      rows += `
+      tbody.innerHTML += `
         <tr>
           <td><b>${stock}</b></td>
           <td>${o.toFixed(2)}</td>
           <td>${h.toFixed(2)}</td>
           <td>${l.toFixed(2)}</td>
           <td>${c.toFixed(2)}</td>
-          <td class="${cls}">${pct.toFixed(2)}%</td>
+          <td class="${color}">${pct.toFixed(2)}%</td>
           <td>${rsi.toFixed(1)}</td>
           <td>${ema.toFixed(2)}</td>
           <td>${vol}</td>
@@ -108,17 +70,20 @@ async function loadData(){
           <td><b>${signal}</b></td>
           <td>${sl}</td>
           <td>${target}</td>
-          <td>${rsi < 50 ? "ACCUMULATE":"WAIT"}</td>
+          <td>${rsi < 50 ? "ACCUMULATE" : "WAIT"}</td>
           <td>Buy above ${resistance.toFixed(2)}</td>
         </tr>`;
-    } catch(e){}
+    } catch (err) {
+      console.error(stock, err);
+      tbody.innerHTML += `
+        <tr>
+          <td colspan="16" style="color:red;">
+            ${stock}: Failed to load (${err})
+          </td>
+        </tr>`;
+    }
   }
-
-  tbody.innerHTML = rows;
 }
 
-loadData(); // load latest on page load
+loadData();
 </script>
-
-</body>
-</html>
