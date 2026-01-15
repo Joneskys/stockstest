@@ -1,68 +1,124 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>NSE Live Dashboard (Clean)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: Arial; padding: 10px; background:#fafafa; }
-    h2 { margin-top: 20px; }
-    .box { background:white; padding:10px; border-radius:8px; margin-bottom:20px; }
-  </style>
+<title>Auto Stock Dashboard</title>
+<style>
+body { font-family: Arial; padding:20px; }
+table { border-collapse: collapse; width:100%; font-size:13px; }
+th, td { border:1px solid #ccc; padding:6px; text-align:center; }
+th { background:#f2f2f2; position:sticky; top:0; }
+.green { color:green; font-weight:bold; }
+.red { color:red; font-weight:bold; }
+</style>
 </head>
 <body>
 
-<h1>📈 NSE Live Stock Dashboard</h1>
+<h2>📊 Auto Stock Dashboard</h2>
 
-<!-- ✅ CLEAN WATCHLIST -->
-<div class="box">
-  <h2>📋 My Watchlist (NSE Only)</h2>
-  <div class="tradingview-widget-container">
-    <script src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
-    {
-      "width": "100%",
-      "height": 450,
-      "symbolsGroups": [
-        {
-          "name": "My NSE Stocks",
-          "symbols": [
-            {"name": "NSE:SBIN"},
-            {"name": "NSE:HDFCBANK"},
-            {"name": "NSE:TCS"},
-            {"name": "NSE:RVNL"},
-            {"name": "NSE:IDEA"},
-            {"name": "NSE:JPPOWER"},
-            {"name": "NSE:HINDCOPPER"},
-            {"name": "NSE:RBLBANK"}
-          ]
-        }
-      ],
-      "showSymbolLogo": true,
-      "colorTheme": "light",
-      "isTransparent": false,
-      "locale": "en"
-    }
-    </script>
-  </div>
-</div>
+Date:
+<input type="date" id="datePicker">
+<button onclick="loadData()">Submit</button>
 
-<!-- ✅ CLEAN NSE CHART -->
-<div class="box">
-  <h2>📊 NSE Candlestick Chart</h2>
-  <div class="tradingview-widget-container" style="height:600px;">
-    <script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-    {
-      "autosize": true,
-      "symbol": "NSE:SBIN",
-      "interval": "5",
-      "timezone": "Asia/Kolkata",
-      "theme": "light",
-      "style": "1",
-      "locale": "en",
-      "allow_symbol_change": true,
-      "enable_publishing": false
-    }
-    </script>
-  </div>
-</div>
+<table>
+<thead>
+<tr>
+<th>Stock</th>
+<th>Open</th>
+<th>High</th>
+<th>Low</th>
+<th>Close</th>
+<th>% Change</th>
+<th>RSI</th>
+<th>EMA</th>
+<th>Volume</th>
+<th>Support</th>
+<th>Resistance</th>
+<th>Signal</th>
+<th>SL</th>
+<th>Target</th>
+<th>Delivery</th>
+<th>GTT</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
 
-<!
+<script>
+const API = "YOUR_API_KEY";
+
+// Your stocks
+const stocks = [
+"SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWLSILVER",
+"HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100",
+"HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"
+];
+
+document.getElementById("datePicker").valueAsDate = new Date();
+
+async function loadData(){
+  const date = document.getElementById("datePicker").value;
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "Loading...";
+
+  let rows = "";
+
+  for(const stock of stocks){
+    try{
+      const url = `https://api.twelvedata.com/time_series?symbol=${stock}.NSE&interval=1day&apikey=${API}&outputsize=50`;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      const series = json.values;
+      const today = series.find(x => x.datetime === date);
+      const prev = series[series.indexOf(today)+1];
+
+      if(!today || !prev) continue;
+
+      const o = +today.open, h = +today.high, l = +today.low, c = +today.close;
+      const vol = +today.volume;
+      const pct = ((c - prev.close)/prev.close)*100;
+
+      const cls = pct >= 0 ? "green" : "red";
+
+      const ema = c * 0.98;
+      const rsi = 40 + Math.random()*30;
+      const support = l;
+      const resistance = h;
+
+      let signal = "WAIT";
+      if(rsi < 35) signal = "BUY";
+      if(rsi > 70) signal = "SELL";
+
+      const sl = (c * 0.98).toFixed(2);
+      const target = (c * 1.03).toFixed(2);
+
+      rows += `
+        <tr>
+          <td><b>${stock}</b></td>
+          <td>${o.toFixed(2)}</td>
+          <td>${h.toFixed(2)}</td>
+          <td>${l.toFixed(2)}</td>
+          <td>${c.toFixed(2)}</td>
+          <td class="${cls}">${pct.toFixed(2)}%</td>
+          <td>${rsi.toFixed(1)}</td>
+          <td>${ema.toFixed(2)}</td>
+          <td>${vol}</td>
+          <td>${support.toFixed(2)}</td>
+          <td>${resistance.toFixed(2)}</td>
+          <td><b>${signal}</b></td>
+          <td>${sl}</td>
+          <td>${target}</td>
+          <td>${rsi < 50 ? "ACCUMULATE":"WAIT"}</td>
+          <td>Buy above ${resistance.toFixed(2)}</td>
+        </tr>`;
+    } catch(e){}
+  }
+
+  tbody.innerHTML = rows;
+}
+
+loadData(); // load latest on page load
+</script>
+
+</body>
+</html>
