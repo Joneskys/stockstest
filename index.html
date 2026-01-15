@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Stock Dashboard Pro</title>
+<title>Stock Dashboard with Date Picker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
@@ -18,15 +18,11 @@ header {background:#020617;padding:12px;border-bottom:1px solid var(--border);}
 .card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;}
 table {width:100%;border-collapse:collapse;}
 th,td {padding:12px;border-bottom:1px solid var(--border);text-align:center;}
-th {cursor:pointer;}
 .pos {color:var(--green);font-weight:bold;}
 .neg {color:var(--red);font-weight:bold;}
 .controls {display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
 input,button {padding:8px 12px;border-radius:10px;border:none;font-size:14px;}
 button {background:#1f2937;color:white;cursor:pointer;}
-button.active {background:var(--blue);}
-#chartModal {position:fixed;inset:0;background:#000c;display:none;align-items:center;justify-content:center;}
-#chartBox {background:#111827;padding:20px;border-radius:16px;width:90%;max-width:700px;}
 </style>
 </head>
 
@@ -34,29 +30,23 @@ button.active {background:var(--blue);}
 
 <header>
   <div class="topbar">
-    <div class="badge" id="nifty">Nifty: --</div>
-    <div class="badge" id="sensex">Sensex: --</div>
-    <div class="badge" id="usd">USD/INR: --</div>
+    <div class="badge">📅 Date:
+      <input type="date" id="datePicker" style="background:#1f2937;color:white;border:none;padding:4px;border-radius:6px">
+    </div>
   </div>
 </header>
 
 <div class="container">
   <div class="card">
-    <div class="controls">
-      <input id="search" placeholder="Search stock...">
-      <button onclick="setFilter('all')" class="active" id="btn-all">All</button>
-      <button onclick="setFilter('gainers')" id="btn-gainers">Gainers</button>
-      <button onclick="setFilter('losers')" id="btn-losers">Losers</button>
-    </div>
-
+    <h3>Historical Stock Data</h3>
     <table>
       <thead>
         <tr>
           <th>Stock</th>
           <th>Low</th>
           <th>High</th>
-          <th>LTP</th>
-          <th onclick="sortByChange()">% Change ⬍</th>
+          <th>Close</th>
+          <th>% Change</th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -64,133 +54,75 @@ button.active {background:var(--blue);}
   </div>
 </div>
 
-<!-- Chart Modal -->
-<div id="chartModal" onclick="closeChart()">
-  <div id="chartBox" onclick="event.stopPropagation()">
-    <canvas id="chart"></canvas>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <script>
-const stocks = [
-  "IDEA","SBIN","TCS","RVNL","JPPOWER",
-  "HINDCOPPER","RBLBANK","HDFCBANK","NTPC","ITC"
-];
+const stocks = ["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
 
-let data = [];
-let filter = "all";
-let sortAsc = false;
+document.getElementById("datePicker").valueAsDate = new Date();
 
-// === Fetch from Yahoo using working proxy ===
-async function fetchQuote(symbol){
-  const yahoo = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`;
-  const proxy = "https://corsproxy.io/?";
-  const res = await fetch(proxy + encodeURIComponent(yahoo));
-  return await res.json();
+// Convert date to Unix timestamp
+function toUnix(dateStr) {
+  return Math.floor(new Date(dateStr).getTime() / 1000);
 }
 
-// === Load Stocks ===
-async function load(){
-  data = [];
-  for(let s of stocks){
+// Fetch historical daily candle
+async function fetchHistorical(symbol, date) {
+  const start = toUnix(date) - 86400 * 2;
+  const end   = toUnix(date) + 86400 * 2;
+
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
+  const proxy = "https://corsproxy.io/?";
+
+  const res = await fetch(proxy + encodeURIComponent(yahooUrl));
+  const json = await res.json();
+
+  const result = json.chart.result?.[0];
+  if (!result) return null;
+
+  const quote = result.indicators.quote[0];
+  const close = result.meta.previousClose;
+
+  return {
+    low: quote.low[quote.low.length-1],
+    high: quote.high[quote.high.length-1],
+    close: quote.close[quote.close.length-1],
+    prevClose: close
+  };
+}
+
+// Load table
+async function loadData() {
+  const date = document.getElementById("datePicker").value;
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+
+  for (let s of stocks) {
     try {
-      let r = (await fetchQuote(s + ".NS")).quoteResponse.result[0];
-      if(!r) continue;
-      data.push({
-        s,
-        low:r.regularMarketDayLow,
-        high:r.regularMarketDayHigh,
-        price:r.regularMarketPrice,
-        change:r.regularMarketChangePercent
-      });
-    } catch(e) {
+      const d = await fetchHistorical(s, date);
+      if (!d) continue;
+
+      const change = ((d.close - d.prevClose) / d.prevClose) * 100;
+      const cls = change >= 0 ? "pos" : "neg";
+
+      tbody.innerHTML += `
+        <tr>
+          <td>${s}</td>
+          <td>${d.low.toFixed(2)}</td>
+          <td>${d.high.toFixed(2)}</td>
+          <td>${d.close.toFixed(2)}</td>
+          <td class="${cls}">${change.toFixed(2)}%</td>
+        </tr>
+      `;
+    } catch (e) {
       console.log("Error", s);
     }
   }
-  render();
 }
 
-// === Render Table ===
-function render(){
-  let q = document.getElementById("search").value.toLowerCase();
-  let rows = data.filter(x=>{
-    if(q && !x.s.toLowerCase().includes(q)) return false;
-    if(filter==="gainers" && x.change < 0) return false;
-    if(filter==="losers" && x.change >= 0) return false;
-    return true;
-  });
+// Reload when date changes
+document.getElementById("datePicker").addEventListener("change", loadData);
 
-  let tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
-
-  rows.forEach(x=>{
-    let cls = x.change >= 0 ? "pos" : "neg";
-    tbody.innerHTML += `
-      <tr onclick="showChart('${x.s}')">
-        <td>${x.s}</td>
-        <td>${x.low?.toFixed(2) || "-"}</td>
-        <td>${x.high?.toFixed(2) || "-"}</td>
-        <td>${x.price?.toFixed(2) || "-"}</td>
-        <td class="${cls}">${x.change?.toFixed(2)}%</td>
-      </tr>
-    `;
-  });
-}
-
-// === Filters ===
-function setFilter(f){
-  filter = f;
-  document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
-  document.getElementById("btn-"+f).classList.add("active");
-  render();
-}
-
-// === Sorting ===
-function sortByChange(){
-  data.sort((a,b)=> sortAsc ? a.change - b.change : b.change - a.change);
-  sortAsc = !sortAsc;
-  render();
-}
-
-// === Search ===
-document.getElementById("search").oninput = render;
-
-// === Chart Popup ===
-function showChart(sym){
-  document.getElementById("chartModal").style.display="flex";
-  let ctx = document.getElementById("chart").getContext("2d");
-  new Chart(ctx,{
-    type:"line",
-    data:{labels:["1","2","3","4","5"],datasets:[{label:sym,data:[1,2,1,3,2],borderColor:"#3b82f6"}]},
-    options:{responsive:true}
-  });
-}
-function closeChart(){
-  document.getElementById("chartModal").style.display="none";
-}
-
-// === Top Bar Market Data ===
-async function loadMarket(){
-  try {
-    const n = (await fetchQuote("^NSEI")).quoteResponse.result[0];
-    const s = (await fetchQuote("^BSESN")).quoteResponse.result[0];
-    const u = (await fetchQuote("USDINR=X")).quoteResponse.result[0];
-
-    document.getElementById("nifty").innerText  = "Nifty: " + n.regularMarketPrice.toFixed(2);
-    document.getElementById("sensex").innerText = "Sensex: " + s.regularMarketPrice.toFixed(2);
-    document.getElementById("usd").innerText    = "USD/INR: " + u.regularMarketPrice.toFixed(2);
-  } catch(e){
-    console.log("Market error");
-  }
-}
-
-// === Start ===
-load();
-loadMarket();
-setInterval(load, 20000);
-setInterval(loadMarket, 60000);
+// Initial load
+loadData();
 </script>
 
 </body>
