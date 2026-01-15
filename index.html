@@ -1,245 +1,121 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Stock Dashboard Pro</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<!-- PWA -->
-<link rel="manifest" href="manifest.json">
-
-<style>
-:root {
-  --bg:#0f172a; --card:#111827; --border:#1f2937;
-  --text:#e5e7eb; --green:#22c55e; --red:#ef4444; --blue:#3b82f6;
-}
-body {margin:0;font-family:Arial;background:var(--bg);color:var(--text);}
-header {background:#020617;padding:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-.container {padding:16px;}
-.card {background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;}
-table {width:100%;border-collapse:collapse;}
-th,td {padding:8px;border-bottom:1px solid var(--border);text-align:center;font-size:14px;}
-th {cursor:pointer;}
-.pos {color:var(--green);font-weight:bold;}
-.neg {color:var(--red);font-weight:bold;}
-input,button {background:#1f2937;color:white;border:none;padding:6px 10px;border-radius:8px;}
-button {cursor:pointer;}
-.controls {display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
-.remove {color:red;cursor:pointer;font-weight:bold;}
-.spark {font-size:12px;opacity:.7;}
-@media(max-width:600px){
-  th,td{font-size:12px;padding:6px;}
-}
-</style>
+  <title>Stock Dashboard</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    select, input, button { padding: 6px; margin: 5px; }
+    .green { color: green; font-weight: bold; }
+    .red { color: red; font-weight: bold; }
+    .card { border: 1px solid #ccc; padding: 15px; margin-top: 15px; border-radius: 8px; }
+  </style>
 </head>
-
 <body>
 
-<header>
-  📅 Date:
-  <input type="date" id="datePicker">
-  <button onclick="applyDate()">Submit</button>
+<h2>📈 Stock Dashboard</h2>
 
-  🔍 Search:
-  <input id="search" placeholder="Filter stocks">
+<label>Select Stock:</label>
+<select id="stockSelect"></select>
 
-  ➕ Add Stock:
-  <input id="addStock" placeholder="e.g. INFY">
-  <button onclick="addStock()">Add</button>
+<label>Select Date:</label>
+<input type="date" id="dateInput">
 
-  <button onclick="exportCSV()">⬇ Export CSV</button>
-</header>
+<button onclick="loadStock()">Submit</button>
 
-<div class="container">
-  <div class="card">
-    <h3>📊 Historical Stock Dashboard</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Stock</th>
-          <th>Low</th>
-          <th>High</th>
-          <th>Close</th>
-          <th>Volume</th>
-          <th>%</th>
-          <th>RSI</th>
-          <th>EMA</th>
-          <th>VWAP</th>
-          <th>Trend</th>
-          <th>❌</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</div>
+<div id="output" class="card"></div>
 
 <script>
-let stocks = JSON.parse(localStorage.getItem("stocks")) ||
-["IDEA","SBIN","TCS","RVNL","JPPOWER","HINDCOPPER","RBLBANK","HDFCBANK"];
+const stocks = [
+"SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWLSILVER",
+"HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS",
+"MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"
+];
 
-let tableData = [];
+const select = document.getElementById("stockSelect");
+stocks.forEach(s => {
+  const opt = document.createElement("option");
+  opt.value = s;
+  opt.textContent = s;
+  select.appendChild(opt);
+});
 
-const yesterday = new Date();
-yesterday.setDate(yesterday.getDate()-1);
-document.getElementById("datePicker").valueAsDate = yesterday;
+// Set today date
+document.getElementById("dateInput").valueAsDate = new Date();
 
-function saveStocks(){
-  localStorage.setItem("stocks", JSON.stringify(stocks));
+function random(min,max){ return (Math.random()*(max-min)+min).toFixed(2); }
+
+function generateMockCandle(){
+  let open = parseFloat(random(900,1100));
+  let high = open + parseFloat(random(2,20));
+  let low = open - parseFloat(random(2,20));
+  let close = parseFloat(random(low, high));
+  let volume = Math.floor(random(100000,5000000));
+  return {open, high, low, close, volume};
 }
 
-function addStock(){
-  const s = document.getElementById("addStock").value.toUpperCase();
-  if(s && !stocks.includes(s)){
-    stocks.push(s);
-    saveStocks();
-    document.getElementById("addStock").value="";
-    load();
+function calcRSI(closes){
+  let gains = 0, losses = 0;
+  for(let i=1;i<closes.length;i++){
+    let diff = closes[i] - closes[i-1];
+    if(diff>0) gains += diff;
+    else losses -= diff;
   }
+  let rs = gains / (losses || 1);
+  return (100 - (100/(1+rs))).toFixed(1);
 }
 
-function removeStock(s){
-  stocks = stocks.filter(x=>x!==s);
-  saveStocks();
-  load();
+function loadStock(){
+  const stock = select.value;
+  const date = document.getElementById("dateInput").value;
+
+  // Generate fake historical
+  let candles = [];
+  for(let i=0;i<15;i++) candles.push(generateMockCandle());
+
+  const today = candles[candles.length-1];
+  const yesterday = candles[candles.length-2];
+
+  const pct = (((today.close - yesterday.close)/yesterday.close)*100).toFixed(2);
+  const color = pct >= 0 ? "green" : "red";
+
+  const ema = (candles.slice(-5).reduce((a,b)=>a+b.close,0)/5).toFixed(2);
+  const rsi = calcRSI(candles.map(c=>c.close));
+
+  const support = Math.min(...candles.map(c=>c.low)).toFixed(2);
+  const resistance = Math.max(...candles.map(c=>c.high)).toFixed(2);
+
+  let suggestion = "WAIT";
+  if(rsi < 35) suggestion = "BUY";
+  if(rsi > 70) suggestion = "SELL";
+
+  document.getElementById("output").innerHTML = `
+  <h3>${stock} (${date})</h3>
+
+  Open: ₹${today.open}<br>
+  High: ₹${today.high}<br>
+  Low: ₹${today.low}<br>
+  Close: ₹${today.close}<br>
+
+  % Change: <span class="${color}">${pct}%</span><br><br>
+
+  <b>Indicators</b><br>
+  EMA(5): ${ema}<br>
+  RSI(14): ${rsi}<br>
+  Support: ₹${support}<br>
+  Resistance: ₹${resistance}<br><br>
+
+  <b>Suggestions</b><br>
+  Intraday: ${suggestion}<br>
+  SL: ${(today.close * 0.98).toFixed(2)}<br>
+  Target: ${(today.close * 1.02).toFixed(2)}<br><br>
+
+  Delivery: ${rsi < 40 ? "ACCUMULATE" : "WAIT"}<br>
+  GTT Idea: Buy above ₹${resistance}<br>
+  `;
 }
 
-document.getElementById("search").oninput = render;
-
-function toUnix(d){ return Math.floor(new Date(d).getTime()/1000); }
-
-async function safeFetch(url){
-  const proxies=[
-    u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
-    u=>"https://corsproxy.io/?"+encodeURIComponent(u),
-    u=>"https://thingproxy.freeboard.io/fetch/"+u
-  ];
-  for(let p of proxies){
-    try{
-      const r=await fetch(p(url));
-      if(r.ok) return await r.json();
-    }catch{}
-  }
-  throw "fail";
-}
-
-async function fetchSeries(symbol,date){
-  const start = toUnix(date)-86400*30;
-  const end = toUnix(date)+86400*2;
-  const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.NS?period1=${start}&period2=${end}&interval=1d`;
-  const json = await safeFetch(url);
-  const r=json.chart?.result?.[0];
-  if(!r) return null;
-
-  const q=r.indicators.quote[0];
-  let candles=[];
-  for(let i=0;i<q.close.length;i++){
-    if(q.close[i]) candles.push({
-      close:q.close[i],low:q.low[i],high:q.high[i],volume:q.volume[i]
-    });
-  }
-  return candles;
-}
-
-// indicators
-function ema(values, period){
-  let k=2/(period+1), ema=values[0];
-  for(let i=1;i<values.length;i++) ema=values[i]*k+ema*(1-k);
-  return ema;
-}
-
-function rsi(values, period=14){
-  if(values.length<period+1) return null;
-  let gains=0, losses=0;
-  for(let i=1;i<=period;i++){
-    let diff=values[i]-values[i-1];
-    if(diff>=0) gains+=diff; else losses-=diff;
-  }
-  let rs = gains/(losses||1);
-  return 100-(100/(1+rs));
-}
-
-function vwap(values, volumes){
-  let num=0, den=0;
-  for(let i=0;i<values.length;i++){
-    num += values[i]*volumes[i];
-    den += volumes[i];
-  }
-  return num/den;
-}
-
-async function load(){
-  const date=document.getElementById("datePicker").value;
-  tableData=[];
-  document.getElementById("tbody").innerHTML="<tr><td colspan='11'>Loading...</td></tr>";
-
-  for(let s of stocks){
-    try{
-      const series = await fetchSeries(s,date);
-      if(!series || series.length<2) continue;
-
-      const today=series[series.length-1];
-      const prev=series[series.length-2];
-      const closes=series.map(x=>x.close);
-      const vols=series.map(x=>x.volume);
-
-      tableData.push({
-        symbol:s,
-        ...today,
-        change:((today.close-prev.close)/prev.close)*100,
-        rsi:rsi(closes),
-        ema:ema(closes,14),
-        vwap:vwap(closes,vols),
-        spark:closes.slice(-10)
-      });
-    }catch{}
-  }
-  render();
-}
-
-function render(){
-  const q=document.getElementById("search").value.toLowerCase();
-  const tbody=document.getElementById("tbody");
-  tbody.innerHTML="";
-
-  tableData.filter(r=>!q || r.symbol.toLowerCase().includes(q))
-  .forEach(r=>{
-    const cls=r.change>=0?"pos":"neg";
-    const spark=r.spark.map(v=>v>r.spark[0]?"▴":"▾").join("");
-
-    tbody.innerHTML+=`
-      <tr>
-        <td>${r.symbol}</td>
-        <td>${r.low.toFixed(2)}</td>
-        <td>${r.high.toFixed(2)}</td>
-        <td>${r.close.toFixed(2)}</td>
-        <td>${r.volume.toLocaleString()}</td>
-        <td class="${cls}">${r.change>0?"+":""}${r.change.toFixed(2)}%</td>
-        <td>${r.rsi? r.rsi.toFixed(1):"-"}</td>
-        <td>${r.ema? r.ema.toFixed(2):"-"}</td>
-        <td>${r.vwap? r.vwap.toFixed(2):"-"}</td>
-        <td class="spark">${spark}</td>
-        <td class="remove" onclick="removeStock('${r.symbol}')">✕</td>
-      </tr>`;
-  });
-}
-
-function applyDate(){ load(); }
-
-function exportCSV(){
-  let csv="Stock,Low,High,Close,Volume,Change,RSI,EMA,VWAP\n";
-  tableData.forEach(r=>{
-    csv+=`${r.symbol},${r.low},${r.high},${r.close},${r.volume},${r.change.toFixed(2)},${r.rsi?.toFixed(2)},${r.ema?.toFixed(2)},${r.vwap?.toFixed(2)}\n`;
-  });
-  const blob=new Blob([csv],{type:"text/csv"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download="stocks.csv";
-  a.click();
-}
-
-// initial load
-load();
+// Auto load latest
+loadStock();
 </script>
 
 </body>
