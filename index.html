@@ -1,27 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Clean Trading Dashboard</title>
+<title>Professional Trading Dashboard</title>
+<script src="https://s3.tradingview.com/tv.js"></script>
 <style>
-body{background:#020617;color:white;font-family:Arial;padding:8px}
-table{width:100%;border-collapse:collapse;font-size:11px}
-th,td{padding:5px;border-bottom:1px solid #1e293b;text-align:left}
-.green{color:#22c55e;font-weight:bold}
-.red{color:#ef4444;font-weight:bold}
-button{background:#1e293b;color:white;border:none;padding:2px 6px;border-radius:4px;font-size:10px;cursor:pointer}
-.stock{cursor:pointer;color:#60a5fa;font-weight:bold}
-
-#popup{
-  position:fixed;top:15%;left:25%;width:50%;
-  background:#0f172a;border:1px solid #334155;
-  padding:12px;border-radius:10px;display:none;
-  box-shadow:0 0 20px black;
-}
+body { background:#020617; color:white; font-family:Arial; padding:10px; }
+table { width:100%; border-collapse:collapse; font-size:12px; }
+td,th { padding:6px; border-bottom:1px solid #1e293b; vertical-align:top; }
+.stock { color:#60a5fa; cursor:pointer; font-weight:bold; }
+.buy { color:#22c55e; font-weight:bold; }
+.sell { color:#ef4444; font-weight:bold; }
+.hold { color:#ffffff; }
+.expand { background:#0f172a; padding:10px; }
+button { background:#1e293b; color:white; border:none; padding:4px 8px; border-radius:5px; font-size:11px; cursor:pointer; margin:2px; }
+canvas { background:#020617; border:1px solid #1e293b; }
 </style>
 </head>
 <body>
 
-<h3>📊 Trading Dashboard (Clean View)</h3>
+<h3>📊 Live Trading Dashboard</h3>
 
 <table>
 <thead>
@@ -29,131 +26,116 @@ button{background:#1e293b;color:white;border:none;padding:2px 6px;border-radius:
 <th>Stock</th>
 <th>Close</th>
 <th>%</th>
-<th>Trade Plan</th>
-<th>ChatGPT</th>
-<th>Groww</th>
+<th>Trade Plan (Intraday)</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 
-<div id="popup">
-  <h4 id="popupTitle"></h4>
-  <div id="popupContent"></div><br>
-  <button onclick="popup.style.display='none'">Close</button>
-</div>
-
 <script>
 const WORKER = "https://red-tooth-e4f7.lovelyideas-in.workers.dev";
 
-const stocks = [
-"SAGILITY","JPPOWER","IDEA","BSE","HDFCBANK","SBIN",
-"GREAVESCOT","TCS","RBLBANK","HINDCOPPER","RVNL","CUPID"
-];
-
-const groww = {
-"SAGILITY":"sagility-india-ltd",
-"SBIN":"state-bank-of-india",
-"HDFCBANK":"hdfc-bank",
-"TCS":"tata-consultancy-services",
-"IDEA":"vodafone-idea",
-"BSE":"bse-ltd",
-"CUPID":"cupid-ltd",
-"RVNL":"rail-vikas-nigam",
-"HINDCOPPER":"hindustan-copper",
-"JPPOWER":"jaiprakash-power-ventures",
-"RBLBANK":"rbl-bank",
-"GREAVESCOT":"greaves-cotton"
-};
+const stocks = ["SBIN","HDFCBANK","TCS","RVNL","IDEA","JPPOWER","CUPID"];
 
 function EMA(v,p=14){let k=2/(p+1),e=v[0];for(let i=1;i<v.length;i++)e=v[i]*k+e*(1-k);return e;}
-function RSI(v,p=14){let g=0,l=0;for(let i=v.length-p;i<v.length-1;i++){let d=v[i+1]-v[i];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
+function RSI(v,p=14){let g=0,l=0;for(let i=v.length-p;i<v.length-1;i++){let d=v[i+1]-v[i];d>0?g+=d:l-=d;}return 100-(100/(1+g/(l||1)));}
 
-function winRate(closes){
-  let wins=0,trades=0;
+function aiScore(rsi,trend){
+  let score = 50;
+  if(rsi<35) score+=25;
+  if(trend) score+=15;
+  if(rsi>70) score-=20;
+  return Math.max(0,Math.min(100,score));
+}
+
+function backtest(closes){
+  let trades=0,wins=0;
   for(let i=20;i<closes.length-5;i++){
     trades++;
-    if(Math.max(...closes.slice(i+1,i+6)) > closes[i]*1.01) wins++;
+    if(Math.max(...closes.slice(i+1,i+6)) > closes[i]*1.02) wins++;
   }
   return trades?Math.round(wins/trades*100):0;
 }
 
-function aiScore(rsi,trend){
-  let s=50;
-  if(rsi<40) s+=20;
-  if(trend) s+=15;
-  return Math.min(100,Math.max(0,s));
-}
-
-function showPopup(sym,data){
-  popup.style.display="block";
-  popupTitle.innerText = sym + " – Detail View";
-  popupContent.innerHTML = `
-    Support: ${data.support}<br>
-    Resistance: ${data.resistance}<br>
-    1 Week Low: ${data.weekLow}<br>
-    1 Week High: ${data.weekHigh}<br>
-    RSI: ${data.rsi}<br>
-    EMA: ${data.ema}<br>
-    VWAP: ${data.vwap}
-  `;
-}
-
 async function loadData(){
-  tbody.innerHTML="";
+  const tbody = document.getElementById("tbody");
+  tbody.innerHTML = "";
+
   for(const s of stocks){
-    try{
-      const res=await fetch(`${WORKER}?symbol=${s}`);
-      const json=await res.json();
-      const q=json.chart?.result?.[0]?.indicators?.quote?.[0];
-      if(!q) continue;
+    const res = await fetch(`${WORKER}?symbol=${s}`);
+    const json = await res.json();
+    const q = json.chart?.result?.[0]?.indicators?.quote?.[0];
+    if(!q) continue;
 
-      const closes=q.close.filter(x=>x);
-      const highs=q.high.filter(x=>x);
-      const lows=q.low.filter(x=>x);
-      const vols=q.volume?.filter(x=>x) || new Array(closes.length).fill(1);
+    const closes = q.close.filter(x=>x);
+    const highs = q.high.filter(x=>x);
+    const lows = q.low.filter(x=>x);
 
-      const close=closes.at(-1);
-      const prev=closes.at(-2);
-      const pct=((close-prev)/prev*100).toFixed(2);
+    const close = closes.at(-1);
+    const prev = closes.at(-2);
+    const pct = ((close-prev)/prev*100).toFixed(2);
 
-      const rsi=RSI(closes.slice(-30));
-      const ema=EMA(closes.slice(-30));
-      const win=winRate(closes);
-      const ai=aiScore(rsi, close>ema);
+    const rsi = RSI(closes.slice(-30));
+    const ema = EMA(closes.slice(-30));
+    const trend = close > ema;
 
-      const support=Math.min(...lows.slice(-10));
-      const resistance=Math.max(...highs.slice(-10));
-      const weekLow=Math.min(...lows.slice(-5));
-      const weekHigh=Math.max(...highs.slice(-5));
-      const vwap=(highs.slice(-30).reduce((a,b,i)=>a+(b+lows[i]+closes[i])/3,0)/30).toFixed(2);
+    const ai = aiScore(rsi, trend);
+    const win = backtest(closes);
 
-      let plan=`No Trade | Win ${win}% | AI ${ai}%`;
-      if(rsi<38){
-        plan=`BUY @ ${close.toFixed(2)} | SL ${(close*0.97).toFixed(2)} | TGT ${(close*1.05).toFixed(2)} | Hold 15–60m | Win ${win}% | AI ${ai}%`;
-      }
-      if(rsi>70){
-        plan=`SELL @ ${close.toFixed(2)} | SL ${(close*1.03).toFixed(2)} | TGT ${(close*0.95).toFixed(2)} | Hold 15–60m | Win ${win}% | AI ${ai}%`;
-      }
+    let signal="HOLD", cls="hold";
+    let sl="-", tgt="-";
 
-      const chat=`https://chat.openai.com/?q=Analyze ${s} stock for intraday trade`;
-      const grow=`https://groww.in/stocks/${groww[s]||s.toLowerCase()+"-ltd"}`;
+    if(rsi<35){
+      signal="BUY"; cls="buy";
+      sl=(close*0.97).toFixed(2);
+      tgt=(close*1.05).toFixed(2);
+    }
+    else if(rsi>70){
+      signal="SELL"; cls="sell";
+      sl=(close*1.03).toFixed(2);
+      tgt=(close*0.95).toFixed(2);
+    }
 
-      const detailData={support:support.toFixed(2),resistance:resistance.toFixed(2),
-                        weekLow:weekLow.toFixed(2),weekHigh:weekHigh.toFixed(2),
-                        rsi:rsi.toFixed(1),ema:ema.toFixed(1),vwap};
+    const plan = `<span class="${cls}">
+      ${signal} @ ${close.toFixed(2)} |
+      SL ${sl} |
+      TGT ${tgt} |
+      Hold 15–60m |
+      Win ${win}% |
+      AI ${ai}%
+    </span>`;
 
-      tbody.innerHTML+=`
-      <tr>
-        <td class="stock" onclick='showPopup("${s}", ${JSON.stringify(detailData)})'>${s}</td>
+    tbody.innerHTML += `
+      <tr onclick="expand('${s}', this)">
+        <td class="stock">${s}</td>
         <td>${close.toFixed(2)}</td>
-        <td class="${pct>=0?'green':'red'}">${pct}%</td>
+        <td>${pct}%</td>
         <td>${plan}</td>
-        <td><a target="_blank" href="${chat}"><button>Ask</button></a></td>
-        <td><a target="_blank" href="${grow}"><button>Trade</button></a></td>
       </tr>`;
-    }catch(e){}
   }
+}
+
+function expand(sym,row){
+  document.querySelectorAll(".expand").forEach(e=>e.remove());
+
+  const detail = document.createElement("tr");
+  detail.className="expand";
+  detail.innerHTML = `
+    <td colspan="4">
+      <div id="tv_${sym}" style="height:300px"></div><br>
+      <button onclick="window.open('https://chat.openai.com/?q=Analyze ${sym} stock for intraday trade with entry SL target win%','_blank')">Ask ChatGPT</button>
+      <button onclick="window.open('https://x.ai/?q=Analyze ${sym} stock for intraday entry SL target win%','_blank')">Ask Grok</button>
+      <button onclick="window.open('https://groww.in/stocks/${sym.toLowerCase()}-ltd','_blank')">Open in Groww</button>
+    </td>`;
+  row.after(detail);
+
+  new TradingView.widget({
+    container_id:`tv_${sym}`,
+    symbol:`NSE:${sym}`,
+    interval:"15",
+    theme:"dark",
+    autosize:true
+  });
 }
 
 loadData();
