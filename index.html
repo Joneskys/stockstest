@@ -2,6 +2,7 @@
 <html>
 <head>
 <title>Historical Stock Dashboard</title>
+
 <style>
 body {
   margin: 0;
@@ -16,23 +17,20 @@ body {
   padding: 15px;
   background: #020617;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .topbar input, .topbar button {
-  padding: 8px;
-  border-radius: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
   border: none;
-}
-
-.topbar input {
   background: #1e293b;
   color: white;
 }
 
-button {
-  background: #334155;
-  color: white;
+.topbar button {
   cursor: pointer;
+  background: #334155;
 }
 
 .container {
@@ -57,6 +55,7 @@ th {
 
 .green { color: #22c55e; font-weight: bold; }
 .red { color: #ef4444; font-weight: bold; }
+.yellow { color: #facc15; font-weight: bold; }
 
 .remove {
   color: red;
@@ -65,11 +64,13 @@ th {
 }
 </style>
 </head>
+
 <body>
 
 <div class="topbar">
-  Date: <input type="date">
-  <button>Submit</button>
+  Date: <input type="date" id="datePicker">
+  <button onclick="applyDate()">Submit</button>
+
   🔍 <input id="search" placeholder="Filter stocks">
   ➕ <input id="newStock" placeholder="Add Stock">
   <button onclick="addStock()">Add</button>
@@ -79,7 +80,7 @@ th {
 <div class="container">
   <h2>📊 Historical Stock Dashboard</h2>
 
-  <table id="table">
+  <table>
     <thead>
       <tr>
         <th>Stock</th>
@@ -87,11 +88,12 @@ th {
         <th>High</th>
         <th>Close</th>
         <th>Volume</th>
-        <th>%</th>
+        <th onclick="sortByPct()" style="cursor:pointer">%</th>
         <th>RSI</th>
         <th>EMA</th>
         <th>VWAP</th>
         <th>Trend</th>
+        <th>Signal</th>
         <th>❌</th>
       </tr>
     </thead>
@@ -100,60 +102,152 @@ th {
 </div>
 
 <script>
-let stocks = [
-  {name:"SBIN", low:1016, high:1029.5, close:1028.45, vol:11016895, pct:1.31, rsi:71.3, ema:998.96, vwap:990.97},
-  {name:"TCS", low:3210.5, high:3280, close:3268, vol:5645341, pct:0.88, rsi:53.1, ema:3246.69, vwap:3253.26},
-  {name:"RVNL", low:325.05, high:337.65, close:330.20, vol:7141388, pct:-0.44, rsi:70.5, ema:343.94, vwap:362.60},
-  {name:"JPPOWER", low:16.45, high:16.80, close:16.65, vol:24450731, pct:1.34, rsi:42.3, ema:17.20, vwap:17.42},
-  {name:"HINDCOPPER", low:535, high:554.6, close:539.45, vol:29862998, pct:-1.15, rsi:87.6, ema:513.57, vwap:500.16}
+let baseStocks = [
+  {name:"SBIN", base:1028},
+  {name:"TCS", base:3268},
+  {name:"RVNL", base:330},
+  {name:"JPPOWER", base:16.6},
+  {name:"HINDCOPPER", base:539}
 ];
 
+let history = {};
+let stocks = [];
+let sortDir = -1;
+
+// Generate realistic multi-day history
+function generateHistory() {
+  baseStocks.forEach(s => {
+    let price = s.base;
+    let arr = [];
+    for (let i = 0; i < 90; i++) {
+      price *= (1 + (Math.random() - 0.5) * 0.02);
+      arr.push(+price.toFixed(2));
+    }
+    history[s.name] = arr;
+  });
+}
+generateHistory();
+
+// EMA
+function calculateEMA(values, period = 14) {
+  const k = 2 / (period + 1);
+  let ema = values[0];
+  for (let i = 1; i < values.length; i++) {
+    ema = values[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+// RSI
+function calculateRSI(values, period = 14) {
+  if (values.length < period + 1) return 50;
+
+  let gains = 0, losses = 0;
+  for (let i = values.length - period - 1; i < values.length - 1; i++) {
+    let diff = values[i + 1] - values[i];
+    if (diff > 0) gains += diff;
+    else losses -= diff;
+  }
+  let rs = gains / (losses || 1);
+  return 100 - (100 / (1 + rs));
+}
+
+// Build data from selected date
+function applyDate() {
+  const date = document.getElementById("datePicker").value;
+  const idx = new Date(date).getDate() % 60;
+
+  stocks = baseStocks.map(s => {
+    const prices = history[s.name].slice(0, idx + 1);
+    const close = prices.at(-1);
+    const prev = prices.at(-2) || close;
+
+    const high = +(close * 1.01).toFixed(2);
+    const low = +(close * 0.99).toFixed(2);
+    const volume = Math.floor(500000 + Math.random() * 50000000);
+
+    const pct = +(((close - prev) / prev) * 100).toFixed(2);
+    const ema = +calculateEMA(prices).toFixed(2);
+    const rsi = +calculateRSI(prices).toFixed(1);
+    const vwap = +((high + low + close) / 3).toFixed(2);
+
+    let signal = "HOLD";
+    if (rsi < 40) signal = "BUY";
+    if (rsi > 70) signal = "SELL";
+
+    return {
+      name: s.name,
+      low, high, close, volume,
+      pct, rsi, ema, vwap,
+      trend: close > ema ? "▲ ▲ ▲" : "▼ ▼ ▼",
+      signal
+    };
+  });
+
+  render();
+}
+
+// Render table
 function render() {
   const tbody = document.getElementById("tbody");
   const filter = document.getElementById("search").value.toLowerCase();
   tbody.innerHTML = "";
 
-  stocks.filter(s => s.name.toLowerCase().includes(filter)).forEach((s,i)=>{
-    const cls = s.pct >= 0 ? "green" : "red";
-    const trend = s.close > s.ema ? "▲ ▲ ▲" : "▼ ▼ ▼";
+  stocks
+    .filter(s => s.name.toLowerCase().includes(filter))
+    .forEach((s, i) => {
+      const pctCls = s.pct >= 0 ? "green" : "red";
+      const sigCls = s.signal === "BUY" ? "green" :
+                     s.signal === "SELL" ? "red" : "yellow";
 
-    tbody.innerHTML += `
-      <tr>
-        <td><b>${s.name}</b></td>
-        <td>${s.low}</td>
-        <td>${s.high}</td>
-        <td>${s.close}</td>
-        <td>${s.vol.toLocaleString()}</td>
-        <td class="${cls}">${s.pct}%</td>
-        <td>${s.rsi}</td>
-        <td>${s.ema}</td>
-        <td>${s.vwap}</td>
-        <td>${trend}</td>
-        <td class="remove" onclick="removeStock(${i})">X</td>
-      </tr>`;
-  });
+      tbody.innerHTML += `
+        <tr>
+          <td><b>${s.name}</b></td>
+          <td>${s.low}</td>
+          <td>${s.high}</td>
+          <td>${s.close}</td>
+          <td>${s.volume.toLocaleString()}</td>
+          <td class="${pctCls}">${s.pct}%</td>
+          <td>${s.rsi}</td>
+          <td>${s.ema}</td>
+          <td>${s.vwap}</td>
+          <td>${s.trend}</td>
+          <td class="${sigCls}">${s.signal}</td>
+          <td class="remove" onclick="removeStock(${i})">X</td>
+        </tr>`;
+    });
 }
 
+// Sort by % change
+function sortByPct() {
+  stocks.sort((a, b) => sortDir * (b.pct - a.pct));
+  sortDir *= -1;
+  render();
+}
+
+// Add stock
 function addStock() {
-  const name = document.getElementById("newStock").value.toUpperCase();
-  if(!name) return;
-  stocks.push({name,low:0,high:0,close:0,vol:0,pct:0,rsi:0,ema:0,vwap:0});
-  document.getElementById("newStock").value="";
-  render();
+  const input = document.getElementById("newStock");
+  if (!input.value) return;
+  baseStocks.push({ name: input.value.toUpperCase(), base: 100 });
+  generateHistory();
+  input.value = "";
+  applyDate();
 }
 
+// Remove stock
 function removeStock(i) {
-  stocks.splice(i,1);
+  stocks.splice(i, 1);
   render();
 }
 
-function exportCSV(){
-  let csv = "Stock,Low,High,Close,Volume,%,RSI,EMA,VWAP\n";
-  stocks.forEach(s=>{
-    csv += `${s.name},${s.low},${s.high},${s.close},${s.vol},${s.pct},${s.rsi},${s.ema},${s.vwap}\n`;
+// Export CSV
+function exportCSV() {
+  let csv = "Stock,Low,High,Close,Volume,%,RSI,EMA,VWAP,Trend,Signal\n";
+  stocks.forEach(s => {
+    csv += `${s.name},${s.low},${s.high},${s.close},${s.volume},${s.pct},${s.rsi},${s.ema},${s.vwap},${s.trend},${s.signal}\n`;
   });
-
-  const blob = new Blob([csv], {type:"text/csv"});
+  const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = "stocks.csv";
@@ -161,7 +255,10 @@ function exportCSV(){
 }
 
 document.getElementById("search").addEventListener("input", render);
-render();
+
+// Initialize
+document.getElementById("datePicker").valueAsDate = new Date();
+applyDate();
 </script>
 
 </body>
