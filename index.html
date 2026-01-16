@@ -9,33 +9,29 @@ th,td{padding:4px;border-bottom:1px solid #1e293b;text-align:left;vertical-align
 .green{color:#22c55e;font-weight:bold}
 .red{color:#ef4444;font-weight:bold}
 .yellow{color:#facc15;font-weight:bold}
-button{background:#1e293b;color:white;border:none;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer}
+button{background:#1e293b;color:white;border:none;padding:2px 6px;border-radius:4px;font-size:10px;cursor:pointer}
 .panel{background:#0f172a;padding:6px;border-radius:6px;margin-bottom:6px}
 </style>
 </head>
 <body>
 
-<h3>📊 Professional Trading Dashboard</h3>
+<h3>📊 Pro Trading Dashboard (Live NSE)</h3>
 
 <div class="panel">
 <button onclick="loadData()">🔄 Refresh</button>
-<button onclick="exportReport()">📦 Export Backtest CSV</button>
 </div>
 
 <table>
 <thead>
 <tr>
 <th>Stock</th>
-<th>Close</th>
-<th>%</th>
-<th>RSI</th>
-<th>EMA</th>
+<th>Close</th><th>%</th>
+<th>RSI</th><th>EMA20</th><th>SMA50</th><th>VWAP</th>
 <th>S1</th><th>S2</th><th>R1</th><th>R2</th>
-<th>Intraday</th>
+<th>Intraday (with Groww)</th>
 <th>Delivery</th>
 <th>GTT</th>
 <th>ChatGPT</th>
-<th>Groww</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
@@ -50,7 +46,6 @@ const stocks = [
 "HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL","CUPID"
 ];
 
-// Accurate Groww slugs
 const groww = {
 "SAGILITY":"sagility-india-ltd",
 "SBIN":"state-bank-of-india",
@@ -64,32 +59,21 @@ const groww = {
 "JPPOWER":"jaiprakash-power-ventures",
 "RBLBANK":"rbl-bank",
 "KIMS":"krishna-institute-medical-sciences",
-"GREAVESCOT":"greaves-cotton",
-"IRIS":"iris-business-services"
+"GREAVESCOT":"greaves-cotton"
 };
 
-function EMA(v,p=14){let k=2/(p+1),e=v[0];for(let i=1;i<v.length;i++)e=v[i]*k+e*(1-k);return e;}
+function EMA(v,p){let k=2/(p+1),e=v[0];for(let i=1;i<v.length;i++)e=v[i]*k+e*(1-k);return e;}
+function SMA(v,p){let arr=v.slice(-p);return arr.reduce((a,b)=>a+b,0)/arr.length;}
 function RSI(v,p=14){let g=0,l=0;for(let i=v.length-p;i<v.length-1;i++){let d=v[i+1]-v[i];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-function backtest(closes,mode){
-  let wins=0,trades=0;
-  for(let i=20;i<closes.length-5;i++){
-    const entry=closes[i];
-    const future=closes.slice(i+1,i+6);
-    trades++;
-    if(mode==="intraday" && Math.max(...future)>entry*1.01) wins++;
-    if(mode==="delivery" && Math.max(...future)>entry*1.03) wins++;
-    if(mode==="gtt" && Math.max(...future)>entry*1.05) wins++;
+function VWAP(highs,lows,closes,volumes){
+  let pv=0,vol=0;
+  for(let i=0;i<closes.length;i++){
+    let tp=(highs[i]+lows[i]+closes[i])/3;
+    pv+=tp*volumes[i];
+    vol+=volumes[i];
   }
-  return trades?Math.round(wins/trades*100):0;
-}
-
-function aiScore(rsi,trend,nearSup){
-  let s=50;
-  if(rsi<40) s+=15;
-  if(trend) s+=15;
-  if(nearSup) s+=10;
-  return Math.min(100,Math.max(0,s));
+  return pv/vol;
 }
 
 async function loadData(){
@@ -98,55 +82,52 @@ async function loadData(){
     try{
       const res=await fetch(`${WORKER}?symbol=${s}`);
       const json=await res.json();
-      const q=json.chart?.result?.[0]?.indicators?.quote?.[0];
-      if(!q) continue;
+      const r=json.chart?.result?.[0];
+      if(!r) continue;
+
+      const q=r.indicators.quote[0];
+      const v=r.indicators.quote[0].volume||[];
 
       const closes=q.close.filter(x=>x);
       const highs=q.high.filter(x=>x);
       const lows=q.low.filter(x=>x);
+      const vols=q.volume?.filter(x=>x) || new Array(closes.length).fill(1);
 
       const close=closes.at(-1);
       const prev=closes.at(-2);
       const pct=((close-prev)/prev*100).toFixed(2);
-      const rsi=RSI(closes.slice(-20));
-      const ema=EMA(closes.slice(-20));
 
-      const s1=Math.min(...lows.slice(-10));
+      const rsi=RSI(closes.slice(-30));
+      const ema20=EMA(closes.slice(-30),20);
+      const sma50=SMA(closes,50);
+      const vwap=VWAP(highs.slice(-30),lows.slice(-30),closes.slice(-30),vols.slice(-30));
+
+      // tighter S/R using recent structure
+      const recentHighs=highs.slice(-10);
+      const recentLows=lows.slice(-10);
+      const s1=Math.min(...recentLows);
       const s2=Math.min(...lows.slice(-20));
-      const r1=Math.max(...highs.slice(-10));
+      const r1=Math.max(...recentHighs);
       const r2=Math.max(...highs.slice(-20));
 
-      const nearSup=Math.abs(close-s1)/close<0.02;
-      const trend=close>ema;
+      let intraday="No Trade";
+      let delivery="Hold";
+      let gtt="Wait";
 
-      const winI=backtest(closes,"intraday");
-      const winD=backtest(closes,"delivery");
-      const winG=backtest(closes,"gtt");
-
-      const aiI=aiScore(rsi,trend,nearSup);
-      const aiD=aiScore(rsi,trend,true);
-      const aiG=aiScore(rsi,false,true);
-
-      const btI=winI, btD=winD, btG=winG;
-
-      let intraday=`No Trade | Win% ${winI} | AI% ${aiI} | BT% ${btI}`;
-      let delivery=`Hold | Win% ${winD} | AI% ${aiD} | BT% ${btD}`;
-      let gtt=`Wait | Win% ${winG} | AI% ${aiG} | BT% ${btG}`;
-
-      if(rsi<35){
-        intraday=`BUY @ ${close.toFixed(2)} | SL ${(close*0.97).toFixed(2)} | TGT ${(close*1.05).toFixed(2)} | Hold 15-60m | Win% ${winI} | AI% ${aiI} | BT% ${btI}`;
-        delivery=`BUY @ ${close.toFixed(2)} | Hold 1-5d | Win% ${winD} | AI% ${aiD} | BT% ${btD}`;
-        gtt=`Buy above ${r1.toFixed(2)} | Win% ${winG} | AI% ${aiG} | BT% ${btG}`;
+      if(rsi<38 && close>ema20){
+        intraday=`BUY @ ${close.toFixed(2)} | SL ${(close*0.97).toFixed(2)} | TGT ${(close*1.05).toFixed(2)} | Hold 15–60m
+        <br><a target="_blank" href="https://groww.in/stocks/${groww[s]||s.toLowerCase()+"-ltd"}"><button>Trade</button></a>`;
+        delivery=`BUY | Hold 2–10 days`;
+        gtt=`Buy above ${r1.toFixed(2)}`;
       }
 
       if(rsi>70){
-        intraday=`SELL @ ${close.toFixed(2)} | SL ${(close*1.03).toFixed(2)} | TGT ${(close*0.95).toFixed(2)} | Hold 15-60m | Win% ${winI} | AI% ${aiI} | BT% ${btI}`;
-        gtt=`Sell below ${s1.toFixed(2)} | Win% ${winG} | AI% ${aiG} | BT% ${btG}`;
+        intraday=`SELL @ ${close.toFixed(2)} | SL ${(close*1.03).toFixed(2)} | TGT ${(close*0.95).toFixed(2)} | Hold 15–60m
+        <br><a target="_blank" href="https://groww.in/stocks/${groww[s]||s.toLowerCase()+"-ltd"}"><button>Trade</button></a>`;
+        gtt=`Sell below ${s1.toFixed(2)}`;
       }
 
-      const chat=`https://chat.openai.com/?q=Analyze ${s} stock for intraday delivery and GTT trading`;
-      const growSlug=groww[s]||s.toLowerCase()+"-ltd";
-      const growUrl=`https://groww.in/stocks/${growSlug}`;
+      const chat=`https://chat.openai.com/?q=Analyze ${s} for intraday, delivery and GTT trade setup`;
 
       tbody.innerHTML+=`
       <tr>
@@ -154,14 +135,15 @@ async function loadData(){
         <td>${close.toFixed(2)}</td>
         <td class="${pct>=0?'green':'red'}">${pct}%</td>
         <td>${rsi.toFixed(1)}</td>
-        <td>${ema.toFixed(1)}</td>
+        <td>${ema20.toFixed(1)}</td>
+        <td>${sma50.toFixed(1)}</td>
+        <td>${vwap.toFixed(1)}</td>
         <td>${s1.toFixed(1)}</td><td>${s2.toFixed(1)}</td>
         <td>${r1.toFixed(1)}</td><td>${r2.toFixed(1)}</td>
         <td>${intraday}</td>
         <td>${delivery}</td>
         <td>${gtt}</td>
         <td><a target="_blank" href="${chat}"><button>Ask</button></a></td>
-        <td><a target="_blank" href="${growUrl}"><button>Trade</button></a></td>
       </tr>`;
     }catch(e){}
   }
