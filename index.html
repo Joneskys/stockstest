@@ -1,82 +1,168 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>My NSE Stock Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body { font-family: Arial; padding: 10px; background:#f7f7f7; }
-    .box { background:white; padding:10px; margin-bottom:15px; border-radius:8px; }
-  </style>
+<title>Historical Stock Dashboard</title>
+<style>
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(#0f172a, #020617);
+  color: #fff;
+}
+
+.topbar {
+  display: flex;
+  gap: 10px;
+  padding: 15px;
+  background: #020617;
+  align-items: center;
+}
+
+.topbar input, .topbar button {
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+}
+
+.topbar input {
+  background: #1e293b;
+  color: white;
+}
+
+button {
+  background: #334155;
+  color: white;
+  cursor: pointer;
+}
+
+.container {
+  padding: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+th, td {
+  padding: 10px;
+  border-bottom: 1px solid #1e293b;
+  text-align: center;
+}
+
+th {
+  color: #94a3b8;
+}
+
+.green { color: #22c55e; font-weight: bold; }
+.red { color: #ef4444; font-weight: bold; }
+
+.remove {
+  color: red;
+  cursor: pointer;
+  font-weight: bold;
+}
+</style>
 </head>
 <body>
 
-<h1>📈 My NSE Stock Dashboard</h1>
-
-<div class="box">
-  <h2>📋 My Watchlist (Live NSE)</h2>
-  <div class="tradingview-widget-container">
-    <script src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
-    {
-      "width": "100%",
-      "height": 450,
-      "symbolsGroups": [
-        {
-          "name": "My Stocks",
-          "symbols": [
-            {"name": "NSE:SAGILITY"},
-            {"name": "NSE:GROWWGOLD"},
-            {"name": "NSE:JPPOWER"},
-            {"name": "NSE:IDEA"},
-            {"name": "NSE:BSE"},
-            {"name": "NSE:HDFCBANK"},
-            {"name": "NSE:SBIN"},
-            {"name": "NSE:TCS"},
-            {"name": "NSE:HINDCOPPER"},
-            {"name": "NSE:RVNL"}
-          ]
-        }
-      ],
-      "showSymbolLogo": true,
-      "colorTheme": "light",
-      "locale": "en"
-    }
-    </script>
-  </div>
+<div class="topbar">
+  Date: <input type="date">
+  <button>Submit</button>
+  🔍 <input id="search" placeholder="Filter stocks">
+  ➕ <input id="newStock" placeholder="Add Stock">
+  <button onclick="addStock()">Add</button>
+  ⬇ <button onclick="exportCSV()">Export CSV</button>
 </div>
 
-<div class="box">
-  <h2>📊 Live Candlestick Chart</h2>
-  <div class="tradingview-widget-container" style="height:600px;">
-    <script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
-    {
-      "autosize": true,
-      "symbol": "NSE:SBIN",
-      "interval": "5",
-      "timezone": "Asia/Kolkata",
-      "theme": "light",
-      "allow_symbol_change": true,
-      "locale": "en"
-    }
-    </script>
-  </div>
+<div class="container">
+  <h2>📊 Historical Stock Dashboard</h2>
+
+  <table id="table">
+    <thead>
+      <tr>
+        <th>Stock</th>
+        <th>Low</th>
+        <th>High</th>
+        <th>Close</th>
+        <th>Volume</th>
+        <th>%</th>
+        <th>RSI</th>
+        <th>EMA</th>
+        <th>VWAP</th>
+        <th>Trend</th>
+        <th>❌</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
 </div>
 
-<div class="box">
-  <h2>🔍 NSE Screener</h2>
-  <div class="tradingview-widget-container">
-    <script src="https://s3.tradingview.com/external-embedding/embed-widget-screener.js" async>
-    {
-      "width": "100%",
-      "height": 500,
-      "screener_type": "stock",
-      "exchange": "NSE",
-      "defaultColumn": "overview",
-      "colorTheme": "light",
-      "locale": "en"
-    }
-    </script>
-  </div>
-</div>
+<script>
+let stocks = [
+  {name:"SBIN", low:1016, high:1029.5, close:1028.45, vol:11016895, pct:1.31, rsi:71.3, ema:998.96, vwap:990.97},
+  {name:"TCS", low:3210.5, high:3280, close:3268, vol:5645341, pct:0.88, rsi:53.1, ema:3246.69, vwap:3253.26},
+  {name:"RVNL", low:325.05, high:337.65, close:330.20, vol:7141388, pct:-0.44, rsi:70.5, ema:343.94, vwap:362.60},
+  {name:"JPPOWER", low:16.45, high:16.80, close:16.65, vol:24450731, pct:1.34, rsi:42.3, ema:17.20, vwap:17.42},
+  {name:"HINDCOPPER", low:535, high:554.6, close:539.45, vol:29862998, pct:-1.15, rsi:87.6, ema:513.57, vwap:500.16}
+];
+
+function render() {
+  const tbody = document.getElementById("tbody");
+  const filter = document.getElementById("search").value.toLowerCase();
+  tbody.innerHTML = "";
+
+  stocks.filter(s => s.name.toLowerCase().includes(filter)).forEach((s,i)=>{
+    const cls = s.pct >= 0 ? "green" : "red";
+    const trend = s.close > s.ema ? "▲ ▲ ▲" : "▼ ▼ ▼";
+
+    tbody.innerHTML += `
+      <tr>
+        <td><b>${s.name}</b></td>
+        <td>${s.low}</td>
+        <td>${s.high}</td>
+        <td>${s.close}</td>
+        <td>${s.vol.toLocaleString()}</td>
+        <td class="${cls}">${s.pct}%</td>
+        <td>${s.rsi}</td>
+        <td>${s.ema}</td>
+        <td>${s.vwap}</td>
+        <td>${trend}</td>
+        <td class="remove" onclick="removeStock(${i})">X</td>
+      </tr>`;
+  });
+}
+
+function addStock() {
+  const name = document.getElementById("newStock").value.toUpperCase();
+  if(!name) return;
+  stocks.push({name,low:0,high:0,close:0,vol:0,pct:0,rsi:0,ema:0,vwap:0});
+  document.getElementById("newStock").value="";
+  render();
+}
+
+function removeStock(i) {
+  stocks.splice(i,1);
+  render();
+}
+
+function exportCSV(){
+  let csv = "Stock,Low,High,Close,Volume,%,RSI,EMA,VWAP\n";
+  stocks.forEach(s=>{
+    csv += `${s.name},${s.low},${s.high},${s.close},${s.vol},${s.pct},${s.rsi},${s.ema},${s.vwap}\n`;
+  });
+
+  const blob = new Blob([csv], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "stocks.csv";
+  a.click();
+}
+
+document.getElementById("search").addEventListener("input", render);
+render();
+</script>
 
 </body>
 </html>
