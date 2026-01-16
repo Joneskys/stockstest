@@ -1,19 +1,19 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Live NSE Dashboard</title>
+<title>Live NSE Stock Dashboard</title>
 <style>
 body {
-  background: linear-gradient(#0f172a,#020617);
+  background: linear-gradient(#020617, #0f172a);
   color: white;
   font-family: Arial;
-  padding: 15px;
+  padding: 20px;
 }
 input, button {
   background:#1e293b;
   color:white;
   border:none;
-  padding:8px 10px;
+  padding:8px 12px;
   border-radius:6px;
 }
 button { cursor:pointer; }
@@ -27,33 +27,26 @@ th, td {
   border-bottom:1px solid #1e293b;
   text-align:center;
 }
-.green{color:#22c55e;font-weight:bold}
-.red{color:#ef4444;font-weight:bold}
-.yellow{color:#facc15;font-weight:bold}
-.chatbtn {
-  background:#2563eb;
-  padding:6px 10px;
-  border-radius:6px;
-}
+.green { color:#22c55e; font-weight:bold; }
+.red { color:#ef4444; font-weight:bold; }
+.yellow { color:#facc15; font-weight:bold; }
+.chatbtn { background:#2563eb; padding:6px 10px; border-radius:6px; }
 </style>
 </head>
 <body>
 
 <h2>📈 Live NSE Stock Dashboard</h2>
 
-Date:
-<input type="date" id="datePicker">
-<button onclick="loadData()">Submit</button>
+<button onclick="loadData()">🔄 Refresh</button>
 
 <table>
 <thead>
 <tr>
 <th>Stock</th>
-<th>Open</th><th>High</th><th>Low</th><th>Close</th>
-<th>%</th>
+<th>Open</th><th>High</th><th>Low</th><th>Close</th><th>%</th>
 <th>RSI</th><th>EMA</th>
 <th>Support</th><th>Resistance</th>
-<th>Intraday Call</th>
+<th>Intraday (SL / Target)</th>
 <th>Delivery</th>
 <th>GTT</th>
 <th>Ask ChatGPT</th>
@@ -63,61 +56,53 @@ Date:
 </table>
 
 <script>
-const API_KEY = "eddc1b73dbe4414d8504b46cc2fb7538";
-
+const WORKER = "https://red-tooth-e4f7.lovelyideas-in.workers.dev";
 const stocks = ["SBIN","TCS","RVNL","JPPOWER","HINDCOPPER"];
-
-document.getElementById("datePicker").valueAsDate = new Date();
 
 function EMA(values, p=14){
   const k = 2/(p+1);
   let ema = values[0];
-  for(let i=1;i<values.length;i++) ema = values[i]*k + ema*(1-k);
+  for(let i=1;i<values.length;i++) {
+    ema = values[i]*k + ema*(1-k);
+  }
   return ema;
 }
 
 function RSI(values, p=14){
-  let gains=0, losses=0;
-  for(let i=values.length-p;i<values.length-1;i++){
-    let diff = values[i+1]-values[i];
-    diff>0 ? gains+=diff : losses-=diff;
+  let gains = 0, losses = 0;
+  for(let i = values.length-p; i < values.length-1; i++){
+    let diff = values[i+1] - values[i];
+    diff > 0 ? gains += diff : losses -= diff;
   }
-  let rs = gains/(losses||1);
-  return 100-(100/(1+rs));
-}
-
-async function fetchData(symbol){
-  const url = `https://api.twelvedata.com/time_series?symbol=${symbol}.NSE&interval=1day&outputsize=60&apikey=${API_KEY}`;
-  const res = await fetch(url);
-  const json = await res.json();
-  if(json.status === "error") throw json.message;
-  return json.values.reverse();
+  let rs = gains / (losses || 1);
+  return 100 - (100 / (1 + rs));
 }
 
 async function loadData(){
-  const date = document.getElementById("datePicker").value;
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = "";
 
   for(const s of stocks){
-    try{
-      const arr = await fetchData(s);
-      const idx = arr.findIndex(x => x.datetime === date);
-      if(idx < 20) continue;
+    try {
+      const res = await fetch(`${WORKER}?symbol=${s}`);
+      const json = await res.json();
 
-      const today = arr[idx];
-      const prev = arr[idx-1];
+      const result = json.chart?.result?.[0];
+      if(!result) continue;
 
-      const open = +today.open;
-      const high = +today.high;
-      const low = +today.low;
-      const close = +today.close;
+      const q = result.indicators.quote[0];
 
-      const pct = (((close - prev.close)/prev.close)*100).toFixed(2);
+      const open = q.open.at(-1);
+      const high = q.high.at(-1);
+      const low  = q.low.at(-1);
+      const close = q.close.at(-1);
+      const prev  = q.close.at(-2);
 
-      const closes = arr.slice(idx-14, idx+1).map(x=>+x.close);
-      const highs = arr.slice(idx-14, idx+1).map(x=>+x.high);
-      const lows  = arr.slice(idx-14, idx+1).map(x=>+x.low);
+      const pct = (((close-prev)/prev)*100).toFixed(2);
+
+      const closes = q.close.filter(x=>x).slice(-20);
+      const highs  = q.high.filter(x=>x).slice(-20);
+      const lows   = q.low.filter(x=>x).slice(-20);
 
       const ema = EMA(closes).toFixed(2);
       const rsi = RSI(closes).toFixed(1);
@@ -128,51 +113,49 @@ async function loadData(){
       let intraday = "NO TRADE";
       let delivery = "HOLD";
       let gtt = "-";
-      let sl = "-", target = "-";
+      let sl = "-", tgt = "-";
 
       if(rsi < 35){
-        intraday = `BUY at ${close}`;
-        sl = (close*0.97).toFixed(2);
-        target = (close*1.05).toFixed(2);
-        gtt = `Buy above ${resistance}`;
+        intraday = `BUY @ ${close.toFixed(2)}`;
+        sl = (close * 0.97).toFixed(2);
+        tgt = (close * 1.05).toFixed(2);
         delivery = "BUY";
+        gtt = `Buy above ${resistance}`;
       }
       else if(rsi > 70){
-        intraday = `SELL at ${close}`;
-        sl = (close*1.03).toFixed(2);
-        target = (close*0.95).toFixed(2);
+        intraday = `SELL @ ${close.toFixed(2)}`;
+        sl = (close * 1.03).toFixed(2);
+        tgt = (close * 0.95).toFixed(2);
         gtt = `Sell below ${support}`;
       }
 
       const chatPrompt = encodeURIComponent(
-        `Analyze ${s} stock for intraday trading. Provide entry, SL, target, and strategy.`
+        `Analyze ${s} for intraday trading. Give entry, stop loss, target and strategy.`
       );
 
       tbody.innerHTML += `
       <tr>
         <td><b>${s}</b></td>
-        <td>${open}</td>
-        <td>${high}</td>
-        <td>${low}</td>
-        <td>${close}</td>
+        <td>${open.toFixed(2)}</td>
+        <td>${high.toFixed(2)}</td>
+        <td>${low.toFixed(2)}</td>
+        <td>${close.toFixed(2)}</td>
         <td class="${pct>=0?'green':'red'}">${pct}%</td>
         <td>${rsi}</td>
         <td>${ema}</td>
         <td>${support}</td>
         <td>${resistance}</td>
-        <td>${intraday}<br>SL: ${sl}<br>TGT: ${target}</td>
+        <td>${intraday}<br>SL: ${sl}<br>TGT: ${tgt}</td>
         <td>${delivery}</td>
         <td>${gtt}</td>
         <td>
-          <a target="_blank"
-             href="https://chat.openai.com/?q=${chatPrompt}">
-             <button class="chatbtn">Ask</button>
+          <a target="_blank" href="https://chat.openai.com/?q=${chatPrompt}">
+            <button class="chatbtn">Ask</button>
           </a>
         </td>
       </tr>`;
-    }
-    catch(e){
-      console.error("Error for", s, e);
+    } catch (e) {
+      console.error("Error loading", s, e);
     }
   }
 }
