@@ -1,265 +1,133 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Historical Stock Dashboard</title>
-
+<title>Live NSE Dashboard</title>
 <style>
 body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: linear-gradient(#0f172a, #020617);
-  color: #fff;
-}
-
-.topbar {
-  display: flex;
-  gap: 10px;
-  padding: 15px;
-  background: #020617;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.topbar input, .topbar button {
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: none;
-  background: #1e293b;
+  background: linear-gradient(#0f172a,#020617);
   color: white;
-}
-
-.topbar button {
-  cursor: pointer;
-  background: #334155;
-}
-
-.container {
-  padding: 20px;
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 10px;
-}
-
-th, td {
+  font-family: Arial;
   padding: 10px;
-  border-bottom: 1px solid #1e293b;
-  text-align: center;
 }
-
-th {
-  color: #94a3b8;
+input,button {
+  background:#1e293b;
+  color:white;
+  border:none;
+  padding:8px;
+  border-radius:6px;
 }
-
-.green { color: #22c55e; font-weight: bold; }
-.red { color: #ef4444; font-weight: bold; }
-.yellow { color: #facc15; font-weight: bold; }
-
-.remove {
-  color: red;
-  cursor: pointer;
-  font-weight: bold;
+button{cursor:pointer;}
+table {
+  width:100%;
+  border-collapse:collapse;
+  margin-top:15px;
 }
+th,td {
+  padding:8px;
+  border-bottom:1px solid #1e293b;
+  text-align:center;
+}
+.green{color:#22c55e;font-weight:bold}
+.red{color:#ef4444;font-weight:bold}
+.yellow{color:#facc15;font-weight:bold}
 </style>
 </head>
-
 <body>
 
-<div class="topbar">
-  Date: <input type="date" id="datePicker">
-  <button onclick="applyDate()">Submit</button>
+<h2>📈 Live NSE Stock Dashboard</h2>
 
-  🔍 <input id="search" placeholder="Filter stocks">
-  ➕ <input id="newStock" placeholder="Add Stock">
-  <button onclick="addStock()">Add</button>
-  ⬇ <button onclick="exportCSV()">Export CSV</button>
-</div>
+Date: <input type="date" id="datePicker">
+<button onclick="loadData()">Submit</button>
 
-<div class="container">
-  <h2>📊 Historical Stock Dashboard</h2>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Stock</th>
-        <th>Low</th>
-        <th>High</th>
-        <th>Close</th>
-        <th>Volume</th>
-        <th onclick="sortByPct()" style="cursor:pointer">%</th>
-        <th>RSI</th>
-        <th>EMA</th>
-        <th>VWAP</th>
-        <th>Trend</th>
-        <th>Signal</th>
-        <th>❌</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
-</div>
+<table>
+<thead>
+<tr>
+<th>Stock</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>%</th>
+<th>RSI</th><th>EMA</th><th>Support</th><th>Resistance</th>
+<th>Intraday</th><th>Delivery</th><th>GTT</th><th>SL</th><th>Target</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
 
 <script>
-let baseStocks = [
-  {name:"SBIN", base:1028},
-  {name:"TCS", base:3268},
-  {name:"RVNL", base:330},
-  {name:"JPPOWER", base:16.6},
-  {name:"HINDCOPPER", base:539}
-];
+const API_KEY = "24a29d9d19ad43b48da9099cba1ec955";
 
-let history = {};
-let stocks = [];
-let sortDir = -1;
+const stocks = ["SBIN","TCS","RVNL","JPPOWER","HINDCOPPER"];
 
-// Generate realistic multi-day history
-function generateHistory() {
-  baseStocks.forEach(s => {
-    let price = s.base;
-    let arr = [];
-    for (let i = 0; i < 90; i++) {
-      price *= (1 + (Math.random() - 0.5) * 0.02);
-      arr.push(+price.toFixed(2));
-    }
-    history[s.name] = arr;
-  });
+document.getElementById("datePicker").valueAsDate = new Date();
+
+async function fetchStock(symbol){
+  const url = `https://api.twelvedata.com/time_series?symbol=${symbol}.NSE&interval=1day&outputsize=60&apikey=${API_KEY}`;
+  const res = await fetch(url);
+  const json = await res.json();
+  if(json.status==="error") throw json.message;
+  return json.values.reverse();
 }
-generateHistory();
 
-// EMA
-function calculateEMA(values, period = 14) {
-  const k = 2 / (period + 1);
+function EMA(values, p=14){
+  const k = 2/(p+1);
   let ema = values[0];
-  for (let i = 1; i < values.length; i++) {
-    ema = values[i] * k + ema * (1 - k);
-  }
+  for(let i=1;i<values.length;i++) ema = values[i]*k + ema*(1-k);
   return ema;
 }
 
-// RSI
-function calculateRSI(values, period = 14) {
-  if (values.length < period + 1) return 50;
-
-  let gains = 0, losses = 0;
-  for (let i = values.length - period - 1; i < values.length - 1; i++) {
-    let diff = values[i + 1] - values[i];
-    if (diff > 0) gains += diff;
-    else losses -= diff;
+function RSI(values, p=14){
+  let gains=0,losses=0;
+  for(let i=values.length-p;i<values.length-1;i++){
+    let diff = values[i+1]-values[i];
+    diff>0 ? gains+=diff : losses-=diff;
   }
-  let rs = gains / (losses || 1);
-  return 100 - (100 / (1 + rs));
+  let rs = gains/(losses||1);
+  return 100-(100/(1+rs));
 }
 
-// Build data from selected date
-function applyDate() {
+async function loadData(){
   const date = document.getElementById("datePicker").value;
-  const idx = new Date(date).getDate() % 60;
-
-  stocks = baseStocks.map(s => {
-    const prices = history[s.name].slice(0, idx + 1);
-    const close = prices.at(-1);
-    const prev = prices.at(-2) || close;
-
-    const high = +(close * 1.01).toFixed(2);
-    const low = +(close * 0.99).toFixed(2);
-    const volume = Math.floor(500000 + Math.random() * 50000000);
-
-    const pct = +(((close - prev) / prev) * 100).toFixed(2);
-    const ema = +calculateEMA(prices).toFixed(2);
-    const rsi = +calculateRSI(prices).toFixed(1);
-    const vwap = +((high + low + close) / 3).toFixed(2);
-
-    let signal = "HOLD";
-    if (rsi < 40) signal = "BUY";
-    if (rsi > 70) signal = "SELL";
-
-    return {
-      name: s.name,
-      low, high, close, volume,
-      pct, rsi, ema, vwap,
-      trend: close > ema ? "▲ ▲ ▲" : "▼ ▼ ▼",
-      signal
-    };
-  });
-
-  render();
-}
-
-// Render table
-function render() {
   const tbody = document.getElementById("tbody");
-  const filter = document.getElementById("search").value.toLowerCase();
   tbody.innerHTML = "";
 
-  stocks
-    .filter(s => s.name.toLowerCase().includes(filter))
-    .forEach((s, i) => {
-      const pctCls = s.pct >= 0 ? "green" : "red";
-      const sigCls = s.signal === "BUY" ? "green" :
-                     s.signal === "SELL" ? "red" : "yellow";
+  for(const s of stocks){
+    try{
+      const arr = await fetchStock(s);
+      const idx = arr.findIndex(x=>x.datetime===date);
+      if(idx<15) continue;
+
+      const today = arr[idx];
+      const prev = arr[idx-1];
+      const closes = arr.slice(idx-14,idx+1).map(x=>+x.close);
+      const lows = arr.slice(idx-14,idx+1).map(x=>+x.low);
+      const highs = arr.slice(idx-14,idx+1).map(x=>+x.high);
+
+      const open=+today.open, high=+today.high, low=+today.low, close=+today.close;
+      const pct = ((close-prev.close)/prev.close*100).toFixed(2);
+
+      const ema = EMA(closes).toFixed(2);
+      const rsi = RSI(closes).toFixed(1);
+
+      const support = Math.min(...lows).toFixed(2);
+      const resistance = Math.max(...highs).toFixed(2);
+
+      let intraday="HOLD", delivery="HOLD";
+      if(rsi<35) {intraday="BUY";delivery="BUY";}
+      if(rsi>70) intraday="SELL";
+
+      const sl = (close*0.97).toFixed(2);
+      const target = (close*1.05).toFixed(2);
 
       tbody.innerHTML += `
-        <tr>
-          <td><b>${s.name}</b></td>
-          <td>${s.low}</td>
-          <td>${s.high}</td>
-          <td>${s.close}</td>
-          <td>${s.volume.toLocaleString()}</td>
-          <td class="${pctCls}">${s.pct}%</td>
-          <td>${s.rsi}</td>
-          <td>${s.ema}</td>
-          <td>${s.vwap}</td>
-          <td>${s.trend}</td>
-          <td class="${sigCls}">${s.signal}</td>
-          <td class="remove" onclick="removeStock(${i})">X</td>
-        </tr>`;
-    });
-}
-
-// Sort by % change
-function sortByPct() {
-  stocks.sort((a, b) => sortDir * (b.pct - a.pct));
-  sortDir *= -1;
-  render();
-}
-
-// Add stock
-function addStock() {
-  const input = document.getElementById("newStock");
-  if (!input.value) return;
-  baseStocks.push({ name: input.value.toUpperCase(), base: 100 });
-  generateHistory();
-  input.value = "";
-  applyDate();
-}
-
-// Remove stock
-function removeStock(i) {
-  stocks.splice(i, 1);
-  render();
-}
-
-// Export CSV
-function exportCSV() {
-  let csv = "Stock,Low,High,Close,Volume,%,RSI,EMA,VWAP,Trend,Signal\n";
-  stocks.forEach(s => {
-    csv += `${s.name},${s.low},${s.high},${s.close},${s.volume},${s.pct},${s.rsi},${s.ema},${s.vwap},${s.trend},${s.signal}\n`;
-  });
-  const blob = new Blob([csv], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "stocks.csv";
-  a.click();
-}
-
-document.getElementById("search").addEventListener("input", render);
-
-// Initialize
-document.getElementById("datePicker").valueAsDate = new Date();
-applyDate();
-</script>
-
-</body>
-</html>
+      <tr>
+        <td><b>${s}</b></td>
+        <td>${open}</td>
+        <td>${high}</td>
+        <td>${low}</td>
+        <td>${close}</td>
+        <td class="${pct>=0?'green':'red'}">${pct}%</td>
+        <td>${rsi}</td>
+        <td>${ema}</td>
+        <td>${support}</td>
+        <td>${resistance}</td>
+        <td class="${intraday=='BUY'?'green':intraday=='SELL'?'red':'yellow'}">${intraday}</td>
+        <td class="${delivery=='BUY'?'green':'yellow'}">${delivery}</td>
+        <td>Buy above ${resistance}</td>
+        <td>${sl}</td>
