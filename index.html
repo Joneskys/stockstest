@@ -1,165 +1,143 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Live NSE Stock Dashboard</title>
+<title>Advanced NSE Trading Dashboard</title>
+<script src="https://s3.tradingview.com/tv.js"></script>
 <style>
-body {
-  background: linear-gradient(#020617, #0f172a);
-  color: white;
-  font-family: Arial;
-  padding: 20px;
-}
-input, button {
-  background:#1e293b;
-  color:white;
-  border:none;
-  padding:8px 12px;
-  border-radius:6px;
-}
-button { cursor:pointer; }
-table {
-  width:100%;
-  border-collapse:collapse;
-  margin-top:15px;
-}
-th, td {
-  padding:10px;
-  border-bottom:1px solid #1e293b;
-  text-align:center;
-}
-.green { color:#22c55e; font-weight:bold; }
-.red { color:#ef4444; font-weight:bold; }
-.yellow { color:#facc15; font-weight:bold; }
-.chatbtn { background:#2563eb; padding:6px 10px; border-radius:6px; }
+body{background:#020617;color:white;font-family:Arial;padding:15px}
+input,button{background:#1e293b;color:white;border:none;padding:6px;border-radius:6px}
+button{cursor:pointer}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:8px;border-bottom:1px solid #1e293b;text-align:center}
+.green{color:#22c55e;font-weight:bold}
+.red{color:#ef4444;font-weight:bold}
+.yellow{color:#facc15;font-weight:bold}
+.panel{background:#0f172a;padding:10px;border:1px solid #1e293b;border-radius:10px;margin-bottom:10px}
 </style>
 </head>
 <body>
 
-<h2>📈 Live NSE Stock Dashboard</h2>
+<h2>📊 Advanced NSE Dashboard</h2>
+
+<div class="panel">
+<b>📌 Strategy Editor</b><br>
+Buy if RSI below <input id="buyRsi" type="number" value="35" style="width:60px">
+Sell if RSI above <input id="sellRsi" type="number" value="70" style="width:60px">
+Min Risk:Reward <input id="rrMin" type="number" step="0.1" value="1.5" style="width:60px">
+<button onclick="loadData()">Apply</button>
+</div>
 
 <button onclick="loadData()">🔄 Refresh</button>
 
 <table>
 <thead>
 <tr>
-<th>Stock</th>
-<th>Open</th><th>High</th><th>Low</th><th>Close</th><th>%</th>
+<th>Stock</th><th>Close</th><th>%</th>
 <th>RSI</th><th>EMA</th>
-<th>Support</th><th>Resistance</th>
-<th>Intraday (SL / Target)</th>
-<th>Delivery</th>
-<th>GTT</th>
-<th>Ask ChatGPT</th>
+<th>Signal</th>
+<th>Entry</th><th>SL</th><th>Target</th>
+<th>R:R</th>
+<th>AI Score</th>
+<th>Backtest Win%</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 
 <script>
-const WORKER = "https://red-tooth-e4f7.lovelyideas-in.workers.dev";
-const stocks = ["SBIN","TCS","RVNL","JPPOWER","HINDCOPPER"];
+const WORKER="https://red-tooth-e4f7.lovelyideas-in.workers.dev";
+const stocks=["SBIN","TCS","RVNL","JPPOWER","HINDCOPPER"];
 
-function EMA(values, p=14){
-  const k = 2/(p+1);
-  let ema = values[0];
-  for(let i=1;i<values.length;i++) {
-    ema = values[i]*k + ema*(1-k);
-  }
-  return ema;
+function EMA(v,p=14){let k=2/(p+1),e=v[0];for(let i=1;i<v.length;i++)e=v[i]*k+e*(1-k);return e;}
+function RSI(v,p=14){let g=0,l=0;for(let i=v.length-p;i<v.length-1;i++){let d=v[i+1]-v[i];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
+
+function aiScore(rsi,close,ema,sup,res){
+  let score=50;
+  if(rsi<40) score+=15;
+  if(rsi>60) score-=10;
+  if(close>ema) score+=10;
+  if(close<ema) score-=10;
+  if(Math.abs(close-sup)/close<0.02) score+=10;
+  if(Math.abs(close-res)/close<0.02) score-=10;
+  return Math.max(0,Math.min(100,score));
 }
 
-function RSI(values, p=14){
-  let gains = 0, losses = 0;
-  for(let i = values.length-p; i < values.length-1; i++){
-    let diff = values[i+1] - values[i];
-    diff > 0 ? gains += diff : losses -= diff;
+function backtest(closes,buyRsi,sellRsi){
+  let trades=0,wins=0;
+  for(let i=20;i<closes.length-5;i++){
+    let rsi=RSI(closes.slice(i-14,i+1));
+    let entry=closes[i];
+    if(rsi<buyRsi){
+      trades++;
+      let future=closes.slice(i+1,i+6);
+      if(Math.max(...future)>entry*1.02) wins++;
+    }
   }
-  let rs = gains / (losses || 1);
-  return 100 - (100 / (1 + rs));
+  return trades?Math.round(wins/trades*100):0;
 }
 
 async function loadData(){
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
+  const tbody=document.getElementById("tbody");
+  tbody.innerHTML="";
+  const buyRsi=+document.getElementById("buyRsi").value;
+  const sellRsi=+document.getElementById("sellRsi").value;
+  const rrMin=+document.getElementById("rrMin").value;
 
   for(const s of stocks){
-    try {
-      const res = await fetch(`${WORKER}?symbol=${s}`);
-      const json = await res.json();
+    const res=await fetch(`${WORKER}?symbol=${s}`);
+    const json=await res.json();
+    const q=json.chart?.result?.[0]?.indicators?.quote?.[0];
+    if(!q) continue;
 
-      const result = json.chart?.result?.[0];
-      if(!result) continue;
+    const closes=q.close.filter(x=>x);
+    const highs=q.high.filter(x=>x);
+    const lows=q.low.filter(x=>x);
 
-      const q = result.indicators.quote[0];
+    const close=closes.at(-1), prev=closes.at(-2);
+    const pct=((close-prev)/prev*100).toFixed(2);
+    const rsi=RSI(closes.slice(-20)).toFixed(1);
+    const ema=EMA(closes.slice(-20)).toFixed(2);
+    const sup=Math.min(...lows.slice(-20));
+    const resi=Math.max(...highs.slice(-20));
 
-      const open = q.open.at(-1);
-      const high = q.high.at(-1);
-      const low  = q.low.at(-1);
-      const close = q.close.at(-1);
-      const prev  = q.close.at(-2);
-
-      const pct = (((close-prev)/prev)*100).toFixed(2);
-
-      const closes = q.close.filter(x=>x).slice(-20);
-      const highs  = q.high.filter(x=>x).slice(-20);
-      const lows   = q.low.filter(x=>x).slice(-20);
-
-      const ema = EMA(closes).toFixed(2);
-      const rsi = RSI(closes).toFixed(1);
-
-      const support = Math.min(...lows).toFixed(2);
-      const resistance = Math.max(...highs).toFixed(2);
-
-      let intraday = "NO TRADE";
-      let delivery = "HOLD";
-      let gtt = "-";
-      let sl = "-", tgt = "-";
-
-      if(rsi < 35){
-        intraday = `BUY @ ${close.toFixed(2)}`;
-        sl = (close * 0.97).toFixed(2);
-        tgt = (close * 1.05).toFixed(2);
-        delivery = "BUY";
-        gtt = `Buy above ${resistance}`;
-      }
-      else if(rsi > 70){
-        intraday = `SELL @ ${close.toFixed(2)}`;
-        sl = (close * 1.03).toFixed(2);
-        tgt = (close * 0.95).toFixed(2);
-        gtt = `Sell below ${support}`;
-      }
-
-      const chatPrompt = encodeURIComponent(
-        `Analyze ${s} for intraday trading. Give entry, stop loss, target and strategy.`
-      );
-
-      tbody.innerHTML += `
-      <tr>
-        <td><b>${s}</b></td>
-        <td>${open.toFixed(2)}</td>
-        <td>${high.toFixed(2)}</td>
-        <td>${low.toFixed(2)}</td>
-        <td>${close.toFixed(2)}</td>
-        <td class="${pct>=0?'green':'red'}">${pct}%</td>
-        <td>${rsi}</td>
-        <td>${ema}</td>
-        <td>${support}</td>
-        <td>${resistance}</td>
-        <td>${intraday}<br>SL: ${sl}<br>TGT: ${tgt}</td>
-        <td>${delivery}</td>
-        <td>${gtt}</td>
-        <td>
-          <a target="_blank" href="https://chat.openai.com/?q=${chatPrompt}">
-            <button class="chatbtn">Ask</button>
-          </a>
-        </td>
-      </tr>`;
-    } catch (e) {
-      console.error("Error loading", s, e);
+    let signal="HOLD", entry="-", sl="-", tgt="-", rr="-";
+    if(rsi<buyRsi){
+      entry=close;
+      sl=close*0.97;
+      tgt=close*1.05;
+      rr=((tgt-entry)/(entry-sl)).toFixed(2);
+      if(rr>=rrMin) signal="BUY";
     }
+    else if(rsi>sellRsi){
+      entry=close;
+      sl=close*1.03;
+      tgt=close*0.95;
+      rr=((entry-tgt)/(sl-entry)).toFixed(2);
+      if(rr>=rrMin) signal="SELL";
+    }
+
+    const ai=aiScore(rsi,close,ema,sup,resi);
+    const win=backtest(closes,buyRsi,sellRsi);
+
+    tbody.innerHTML+=`
+    <tr>
+      <td><b>${s}</b></td>
+      <td>${close.toFixed(2)}</td>
+      <td class="${pct>=0?'green':'red'}">${pct}%</td>
+      <td>${rsi}</td>
+      <td>${ema}</td>
+      <td class="${signal=='BUY'?'green':signal=='SELL'?'red':'yellow'}">${signal}</td>
+      <td>${entry}</td>
+      <td>${sl}</td>
+      <td>${tgt}</td>
+      <td>${rr}</td>
+      <td>${ai}/100</td>
+      <td>${win}%</td>
+    </tr>`;
   }
 }
 
+setInterval(loadData,60000);
 loadData();
 </script>
 </body>
