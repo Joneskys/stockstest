@@ -1,143 +1,174 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Advanced NSE Trading Dashboard</title>
-<script src="https://s3.tradingview.com/tv.js"></script>
+<title>Pro Trading Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 body{background:#020617;color:white;font-family:Arial;padding:15px}
-input,button{background:#1e293b;color:white;border:none;padding:6px;border-radius:6px}
+input,select,button{background:#1e293b;color:white;border:none;padding:6px;border-radius:6px}
 button{cursor:pointer}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{padding:8px;border-bottom:1px solid #1e293b;text-align:center}
 .green{color:#22c55e;font-weight:bold}
 .red{color:#ef4444;font-weight:bold}
 .yellow{color:#facc15;font-weight:bold}
-.panel{background:#0f172a;padding:10px;border:1px solid #1e293b;border-radius:10px;margin-bottom:10px}
+.panel{background:#0f172a;padding:10px;border-radius:10px;margin-bottom:10px}
+canvas{background:#0f172a;margin-top:10px;border-radius:10px}
 </style>
 </head>
 <body>
 
-<h2>📊 Advanced NSE Dashboard</h2>
+<h2>📊 Professional Trading Dashboard</h2>
 
 <div class="panel">
-<b>📌 Strategy Editor</b><br>
-Buy if RSI below <input id="buyRsi" type="number" value="35" style="width:60px">
-Sell if RSI above <input id="sellRsi" type="number" value="70" style="width:60px">
-Min Risk:Reward <input id="rrMin" type="number" step="0.1" value="1.5" style="width:60px">
+Strategy Preset:
+<select id="preset" onchange="applyPreset()">
+  <option value="conservative">Conservative</option>
+  <option value="balanced" selected>Balanced</option>
+  <option value="aggressive">Aggressive</option>
+</select>
+Buy RSI <input id="buyRsi" value="35" style="width:50px">
+Sell RSI <input id="sellRsi" value="70" style="width:50px">
+RR ≥ <input id="rr" value="1.5" style="width:50px">
 <button onclick="loadData()">Apply</button>
 </div>
-
-<button onclick="loadData()">🔄 Refresh</button>
 
 <table>
 <thead>
 <tr>
 <th>Stock</th><th>Close</th><th>%</th>
 <th>RSI</th><th>EMA</th>
-<th>Signal</th>
-<th>Entry</th><th>SL</th><th>Target</th>
-<th>R:R</th>
-<th>AI Score</th>
-<th>Backtest Win%</th>
+<th>S1</th><th>S2</th><th>R1</th><th>R2</th>
+<th>Signal</th><th>Entry</th><th>SL</th><th>Target</th>
+<th>AI</th><th>Win%</th>
+<th>ChatGPT</th><th>Groww</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 
+<h3>📈 Equity Curve</h3>
+<canvas id="equity"></canvas>
+
+<h3>📉 Drawdown</h3>
+<canvas id="drawdown"></canvas>
+
 <script>
-const WORKER="https://red-tooth-e4f7.lovelyideas-in.workers.dev";
-const stocks=["SBIN","TCS","RVNL","JPPOWER","HINDCOPPER"];
+const WORKER = "https://red-tooth-e4f7.lovelyideas-in.workers.dev";
+
+const stocks = [
+"SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER",
+"HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100",
+"HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"
+];
+
+function applyPreset(){
+  const p=document.getElementById("preset").value;
+  if(p=="conservative"){buyRsi.value=30;sellRsi.value=75;rr.value=2;}
+  if(p=="balanced"){buyRsi.value=35;sellRsi.value=70;rr.value=1.5;}
+  if(p=="aggressive"){buyRsi.value=40;sellRsi.value=65;rr.value=1.2;}
+}
 
 function EMA(v,p=14){let k=2/(p+1),e=v[0];for(let i=1;i<v.length;i++)e=v[i]*k+e*(1-k);return e;}
 function RSI(v,p=14){let g=0,l=0;for(let i=v.length-p;i<v.length-1;i++){let d=v[i+1]-v[i];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-function aiScore(rsi,close,ema,sup,res){
-  let score=50;
-  if(rsi<40) score+=15;
-  if(rsi>60) score-=10;
-  if(close>ema) score+=10;
-  if(close<ema) score-=10;
-  if(Math.abs(close-sup)/close<0.02) score+=10;
-  if(Math.abs(close-res)/close<0.02) score-=10;
-  return Math.max(0,Math.min(100,score));
-}
-
-function backtest(closes,buyRsi,sellRsi){
-  let trades=0,wins=0;
+function backtest(closes,buy,sell){
+  let equity=100,curve=[100],peak=100,maxdd=0,trades=0,wins=0;
   for(let i=20;i<closes.length-5;i++){
-    let rsi=RSI(closes.slice(i-14,i+1));
-    let entry=closes[i];
-    if(rsi<buyRsi){
+    let r=RSI(closes.slice(i-14,i+1));
+    if(r<buy){
       trades++;
+      let entry=closes[i];
       let future=closes.slice(i+1,i+6);
-      if(Math.max(...future)>entry*1.02) wins++;
+      let win=Math.max(...future)>entry*1.02;
+      if(win){equity*=1.02;wins++} else equity*=0.99;
+      peak=Math.max(peak,equity);
+      maxdd=Math.min(maxdd,(equity-peak)/peak);
+      curve.push(equity);
     }
   }
-  return trades?Math.round(wins/trades*100):0;
+  return {winrate:trades?Math.round(wins/trades*100):0,curve,maxdd};
 }
 
 async function loadData(){
   const tbody=document.getElementById("tbody");
   tbody.innerHTML="";
-  const buyRsi=+document.getElementById("buyRsi").value;
-  const sellRsi=+document.getElementById("sellRsi").value;
-  const rrMin=+document.getElementById("rrMin").value;
+  let allCurves=[];
+  let allDraw=[];
 
   for(const s of stocks){
-    const res=await fetch(`${WORKER}?symbol=${s}`);
-    const json=await res.json();
-    const q=json.chart?.result?.[0]?.indicators?.quote?.[0];
-    if(!q) continue;
+    try{
+      const res=await fetch(`${WORKER}?symbol=${s}`);
+      const json=await res.json();
+      const q=json.chart?.result?.[0]?.indicators?.quote?.[0];
+      if(!q) continue;
 
-    const closes=q.close.filter(x=>x);
-    const highs=q.high.filter(x=>x);
-    const lows=q.low.filter(x=>x);
+      const closes=q.close.filter(x=>x);
+      const highs=q.high.filter(x=>x);
+      const lows=q.low.filter(x=>x);
 
-    const close=closes.at(-1), prev=closes.at(-2);
-    const pct=((close-prev)/prev*100).toFixed(2);
-    const rsi=RSI(closes.slice(-20)).toFixed(1);
-    const ema=EMA(closes.slice(-20)).toFixed(2);
-    const sup=Math.min(...lows.slice(-20));
-    const resi=Math.max(...highs.slice(-20));
+      const close=closes.at(-1);
+      const prev=closes.at(-2);
+      const pct=((close-prev)/prev*100).toFixed(2);
+      const rsi=RSI(closes.slice(-20)).toFixed(1);
+      const ema=EMA(closes.slice(-20)).toFixed(2);
 
-    let signal="HOLD", entry="-", sl="-", tgt="-", rr="-";
-    if(rsi<buyRsi){
-      entry=close;
-      sl=close*0.97;
-      tgt=close*1.05;
-      rr=((tgt-entry)/(entry-sl)).toFixed(2);
-      if(rr>=rrMin) signal="BUY";
-    }
-    else if(rsi>sellRsi){
-      entry=close;
-      sl=close*1.03;
-      tgt=close*0.95;
-      rr=((entry-tgt)/(sl-entry)).toFixed(2);
-      if(rr>=rrMin) signal="SELL";
-    }
+      const s1=Math.min(...lows.slice(-10)).toFixed(2);
+      const s2=Math.min(...lows.slice(-20)).toFixed(2);
+      const r1=Math.max(...highs.slice(-10)).toFixed(2);
+      const r2=Math.max(...highs.slice(-20)).toFixed(2);
 
-    const ai=aiScore(rsi,close,ema,sup,resi);
-    const win=backtest(closes,buyRsi,sellRsi);
+      const bt=backtest(closes, +buyRsi.value, +sellRsi.value);
+      allCurves.push(bt.curve);
+      allDraw.push(bt.maxdd*100);
 
-    tbody.innerHTML+=`
-    <tr>
-      <td><b>${s}</b></td>
-      <td>${close.toFixed(2)}</td>
-      <td class="${pct>=0?'green':'red'}">${pct}%</td>
-      <td>${rsi}</td>
-      <td>${ema}</td>
-      <td class="${signal=='BUY'?'green':signal=='SELL'?'red':'yellow'}">${signal}</td>
-      <td>${entry}</td>
-      <td>${sl}</td>
-      <td>${tgt}</td>
-      <td>${rr}</td>
-      <td>${ai}/100</td>
-      <td>${win}%</td>
-    </tr>`;
+      const chat=`https://chat.openai.com/?q=Analyze ${s} stock for intraday trading`;
+      const grow=`https://groww.in/stocks/${s.toLowerCase()}`;
+
+      tbody.innerHTML+=`
+      <tr>
+        <td>${s}</td>
+        <td>${close.toFixed(2)}</td>
+        <td class="${pct>=0?'green':'red'}">${pct}%</td>
+        <td>${rsi}</td>
+        <td>${ema}</td>
+        <td>${s1}</td><td>${s2}</td>
+        <td>${r1}</td><td>${r2}</td>
+        <td>${rsi<buyRsi.value?'BUY':rsi>sellRsi.value?'SELL':'HOLD'}</td>
+        <td>${close.toFixed(2)}</td>
+        <td>${(close*0.97).toFixed(2)}</td>
+        <td>${(close*1.05).toFixed(2)}</td>
+        <td>${Math.min(100,Math.max(0,Math.round(50+(rsi<40?20:-10))))}</td>
+        <td>${bt.winrate}%</td>
+        <td><a target="_blank" href="${chat}"><button>Ask</button></a></td>
+        <td><a target="_blank" href="${grow}"><button>Trade</button></a></td>
+      </tr>`;
+    }catch(e){}
   }
+
+  renderChart("equity", averageCurves(allCurves), "Equity Curve");
+  renderChart("drawdown", allDraw, "Drawdown %");
 }
 
-setInterval(loadData,60000);
+function averageCurves(curves){
+  let max=Math.max(...curves.map(c=>c.length));
+  let avg=[];
+  for(let i=0;i<max;i++){
+    let sum=0,cnt=0;
+    curves.forEach(c=>{if(c[i]){sum+=c[i];cnt++;}});
+    avg.push(cnt?sum/cnt:100);
+  }
+  return avg;
+}
+
+function renderChart(id,data,label){
+  new Chart(document.getElementById(id),{
+    type:'line',
+    data:{labels:data.map((_,i)=>i),datasets:[{label,data,borderColor:'#22c55e'}]},
+    options:{responsive:true,plugins:{legend:{labels:{color:'white'}}},scales:{x:{ticks:{color:'white'}},y:{ticks:{color:'white'}}}}
+  });
+}
+
 loadData();
 </script>
 </body>
