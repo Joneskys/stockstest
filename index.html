@@ -1,89 +1,82 @@
-<script>
-const API = 24a29d9d19ad43b48da9099cba1ec955;
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My NSE Stock Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial; padding: 10px; background:#f7f7f7; }
+    .box { background:white; padding:10px; margin-bottom:15px; border-radius:8px; }
+  </style>
+</head>
+<body>
 
-const stocks = [
-"SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWLSILVER",
-"HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100",
-"HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"
-];
+<h1>📈 My NSE Stock Dashboard</h1>
 
-document.getElementById("datePicker").valueAsDate = new Date();
-
-async function loadData(){
-  const date = document.getElementById("datePicker").value;
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
-
-  for (const stock of stocks) {
-    try {
-      const symbol = `${stock}.NSE`;
-      const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=1day&outputsize=100&apikey=${API}`;
-
-      const res = await fetch(url);
-      const json = await res.json();
-
-      if (json.status === "error") {
-        throw json.message;
-      }
-
-      const series = json.values;
-      const today = series.find(x => x.datetime === date);
-      const idx = series.indexOf(today);
-
-      if (!today || idx + 1 >= series.length) {
-        tbody.innerHTML += `<tr><td colspan="16">${stock}: No data for ${date}</td></tr>`;
-        continue;
-      }
-
-      const prev = series[idx + 1];
-
-      const o = +today.open, h = +today.high, l = +today.low, c = +today.close;
-      const vol = +today.volume;
-      const pct = ((c - prev.close) / prev.close) * 100;
-      const color = pct >= 0 ? "green" : "red";
-
-      const ema = c * 0.98;
-      const rsi = 40 + Math.random() * 30;
-      const support = l;
-      const resistance = h;
-
-      let signal = "WAIT";
-      if (rsi < 35) signal = "BUY";
-      if (rsi > 70) signal = "SELL";
-
-      const sl = (c * 0.98).toFixed(2);
-      const target = (c * 1.03).toFixed(2);
-
-      tbody.innerHTML += `
-        <tr>
-          <td><b>${stock}</b></td>
-          <td>${o.toFixed(2)}</td>
-          <td>${h.toFixed(2)}</td>
-          <td>${l.toFixed(2)}</td>
-          <td>${c.toFixed(2)}</td>
-          <td class="${color}">${pct.toFixed(2)}%</td>
-          <td>${rsi.toFixed(1)}</td>
-          <td>${ema.toFixed(2)}</td>
-          <td>${vol}</td>
-          <td>${support.toFixed(2)}</td>
-          <td>${resistance.toFixed(2)}</td>
-          <td><b>${signal}</b></td>
-          <td>${sl}</td>
-          <td>${target}</td>
-          <td>${rsi < 50 ? "ACCUMULATE" : "WAIT"}</td>
-          <td>Buy above ${resistance.toFixed(2)}</td>
-        </tr>`;
-    } catch (err) {
-      console.error(stock, err);
-      tbody.innerHTML += `
-        <tr>
-          <td colspan="16" style="color:red;">
-            ${stock}: Failed to load (${err})
-          </td>
-        </tr>`;
+<div class="box">
+  <h2>📋 My Watchlist (Live NSE)</h2>
+  <div class="tradingview-widget-container">
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js" async>
+    {
+      "width": "100%",
+      "height": 450,
+      "symbolsGroups": [
+        {
+          "name": "My Stocks",
+          "symbols": [
+            {"name": "NSE:SAGILITY"},
+            {"name": "NSE:GROWWGOLD"},
+            {"name": "NSE:JPPOWER"},
+            {"name": "NSE:IDEA"},
+            {"name": "NSE:BSE"},
+            {"name": "NSE:HDFCBANK"},
+            {"name": "NSE:SBIN"},
+            {"name": "NSE:TCS"},
+            {"name": "NSE:HINDCOPPER"},
+            {"name": "NSE:RVNL"}
+          ]
+        }
+      ],
+      "showSymbolLogo": true,
+      "colorTheme": "light",
+      "locale": "en"
     }
-  }
-}
+    </script>
+  </div>
+</div>
 
-loadData();
-</script>
+<div class="box">
+  <h2>📊 Live Candlestick Chart</h2>
+  <div class="tradingview-widget-container" style="height:600px;">
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+    {
+      "autosize": true,
+      "symbol": "NSE:SBIN",
+      "interval": "5",
+      "timezone": "Asia/Kolkata",
+      "theme": "light",
+      "allow_symbol_change": true,
+      "locale": "en"
+    }
+    </script>
+  </div>
+</div>
+
+<div class="box">
+  <h2>🔍 NSE Screener</h2>
+  <div class="tradingview-widget-container">
+    <script src="https://s3.tradingview.com/external-embedding/embed-widget-screener.js" async>
+    {
+      "width": "100%",
+      "height": 500,
+      "screener_type": "stock",
+      "exchange": "NSE",
+      "defaultColumn": "overview",
+      "colorTheme": "light",
+      "locale": "en"
+    }
+    </script>
+  </div>
+</div>
+
+</body>
+</html>
