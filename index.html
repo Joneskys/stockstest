@@ -1,390 +1,177 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Market Dashboard - Professional Trading Platform</title>
-    <style>
-        /* ==========================================================================
-           CSS RESET & BASE STYLES
-           ========================================================================== */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="UTF-8" />
+<title>Stock Dashboard Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+body { margin:0; background:#0f172a; color:#e2e8f0; font-family:system-ui;}
+header{position:sticky;top:0;background:#020617;padding:10px;z-index:9;border-bottom:1px solid #1f2937;}
+input,button{background:#0f172a;color:white;border:1px solid #334155;padding:6px;border-radius:6px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border:1px solid #1f2937;padding:4px;text-align:center}
+th{position:sticky;top:50px;background:#020617}
+tr:nth-child(even){background:#0b1220}
+.green{color:#22c55e} .red{color:#ef4444} .orange{color:#f59e0b}
+.badge{font-weight:bold}
+</style>
+</head>
+<body>
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-            color: #ffffff;
-            line-height: 1.6;
-            overflow-x: auto;
-        }
+<header>
+  <input type="date" id="date">
+  <button onclick="render()">Submit</button>
+  <input placeholder="Search" oninput="render()" id="search">
+  <button onclick="filter='buy';render()">Only Buy</button>
+  <button onclick="filter='sell';render()">Only Sell</button>
+  <button onclick="filter='all';render()">All</button>
+</header>
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+<table>
+<thead>
+<tr>
+<th>Stock</th><th>Signal</th><th>Trend</th>
+<th>Buy</th><th>Sell</th><th>SL</th><th>Target</th>
+<th>GTT Status</th>
+<th>Backtest Trades</th><th>Win%</th><th>Profit%</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
 
-        /* ==========================================================================
-           HEADER & CONTROLS
-           ========================================================================== */
-        .header {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
+<script>
+const API = "https://red-tooth-e4f7.lovelyideas-in.workers.dev";
+const STOCKS = ["SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"];
 
-        .header h1 {
-            text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 20px;
-            background: linear-gradient(45deg, #00d4ff, #0099cc);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
+let DB = {};
+let filter="all";
 
-        .controls {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 20px;
-        }
+async function loadData(){
+  try{
+    const res = await fetch(API);
+    const json = await res.json();
+    DB = json;
+  }catch{
+    generateMock();
+  }
+  document.getElementById("date").value = latestDate();
+  render();
+}
 
-        .date-picker-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 10px;
-        }
+function generateMock(){
+  const today=new Date();
+  STOCKS.forEach(s=>{
+    let p=100+Math.random()*100;
+    DB[s]=[];
+    for(let i=90;i>=0;i--){
+      let d=new Date(today);d.setDate(today.getDate()-i);
+      let o=p;
+      let c=o+(Math.random()-0.5)*4;
+      let h=Math.max(o,c)+Math.random()*2;
+      let l=Math.min(o,c)-Math.random()*2;
+      p=c;
+      DB[s].push({date:d.toISOString().slice(0,10),open:o,high:h,low:l,close:c});
+    }
+  });
+}
 
-        #datePicker {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            font-size: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
+function latestDate(){
+  return DB[Object.keys(DB)[0]].at(-1).date;
+}
 
-        #datePicker::placeholder {
-            color: rgba(255, 255, 255, 0.7);
-        }
+// INDICATORS
+const EMA=(arr,p)=>{
+  let k=2/(p+1),e=arr[0];
+  arr.forEach(v=>e=v*k+e*(1-k));
+  return e;
+};
+const RSI=(arr,p=14)=>{
+  let g=0,l=0;
+  for(let i=1;i<=p;i++){
+    let d=arr[i]-arr[i-1];
+    d>0?g+=d:l-=d;
+  }
+  let rs=g/(l||1);return 100-(100/(1+rs));
+};
 
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
+// STRATEGY
+function signal(data){
+  const c=data.map(x=>x.close);
+  let e9=EMA(c.slice(-9),9), e21=EMA(c.slice(-21),21);
+  let r=RSI(c.slice(-15));
+  if(e9>e21 && r>55) return "BUY";
+  if(e9<e21 && r<45) return "SELL";
+  return "HOLD";
+}
 
-        .btn-primary {
-            background: linear-gradient(45deg, #00d4ff, #0099cc);
-            color: white;
-            box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
-        }
+// BACKTEST ENGINE
+function backtest(data){
+  let trades=0,wins=0,pnl=0;
+  for(let i=30;i<data.length-1;i++){
+    let slice=data.slice(0,i);
+    let s=signal(slice);
+    if(s==="BUY"){
+      trades++;
+      let entry=data[i].close;
+      let exit=data[i+1].close;
+      let profit=(exit-entry)/entry*100;
+      pnl+=profit;
+      if(profit>0) wins++;
+    }
+  }
+  return {trades,wins,winrate:trades?wins/trades*100:0,pnl};
+}
 
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(0, 212, 255, 0.4);
-        }
+// GTT SIMULATION
+function simulateGTT(data,signal){
+  let last=data.at(-1).close;
+  let sl=signal==="BUY"?last*0.98:last*1.02;
+  let tgt=signal==="BUY"?last*1.03:last*0.97;
+  let status="Waiting";
+  let next=data.at(-1);
+  if(signal==="BUY"){
+    if(next.low<=sl) status="SL Hit";
+    else if(next.high>=tgt) status="Target Hit";
+  }
+  return status;
+}
 
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
+function render(){
+  const date=document.getElementById("date").value;
+  const search=document.getElementById("search").value.toLowerCase();
+  let tbody="";
+  for(let s in DB){
+    if(search && !s.toLowerCase().includes(search)) continue;
+    let data=DB[s];
+    let idx=data.findIndex(d=>d.date===date);
+    if(idx<30) continue;
+    let slice=data.slice(0,idx+1);
+    let sig=signal(slice);
+    if(filter==="buy" && sig!=="BUY") continue;
+    if(filter==="sell" && sig!=="SELL") continue;
 
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
+    let bt=backtest(slice);
+    let gtt=simulateGTT(slice,sig);
 
-        .filter-buttons {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
+    tbody+=`
+    <tr>
+      <td>${s}</td>
+      <td class="badge ${sig==="BUY"?"green":sig==="SELL"?"red":"orange"}">${sig}</td>
+      <td>${sig}</td>
+      <td>${slice.at(-1).close.toFixed(2)}</td>
+      <td>${slice.at(-1).close.toFixed(2)}</td>
+      <td>${(slice.at(-1).close*0.98).toFixed(2)}</td>
+      <td>${(slice.at(-1).close*1.03).toFixed(2)}</td>
+      <td>${gtt}</td>
+      <td>${bt.trades}</td>
+      <td>${bt.winrate.toFixed(1)}%</td>
+      <td>${bt.pnl.toFixed(2)}%</td>
+    </tr>`;
+  }
+  document.getElementById("tbody").innerHTML=tbody;
+}
 
-        .search-container {
-            position: relative;
-        }
-
-        #searchInput {
-            padding: 12px 45px 12px 15px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            width: 250px;
-            font-size: 16px;
-        }
-
-        #searchInput::placeholder {
-            color: rgba(255, 255, 255, 0.7);
-        }
-
-        .search-icon {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: rgba(255, 255, 255, 0.7);
-        }
-
-        /* ==========================================================================
-           STOCK TABLE
-           ========================================================================== */
-        .stock-table-container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
-
-        .table-header {
-            background: linear-gradient(45deg, #1a1a2e, #16213e);
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-
-        th, td {
-            padding: 15px 12px;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        th {
-            background: rgba(0, 212, 255, 0.1);
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-size: 12px;
-            color: #00d4ff;
-            cursor: pointer;
-            transition: background 0.3s ease;
-            position: sticky;
-            top: 0;
-            z-index: 5;
-        }
-
-        th:hover {
-            background: rgba(0, 212, 255, 0.2);
-        }
-
-        th.sortable::after {
-            content: ' ↕';
-            opacity: 0.5;
-        }
-
-        th.sorted-asc::after {
-            content: ' ↑';
-            opacity: 1;
-        }
-
-        th.sorted-desc::after {
-            content: ' ↓';
-            opacity: 1;
-        }
-
-        tr {
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        tr:hover {
-            background: rgba(255, 255, 255, 0.05);
-            transform: scale(1.01);
-        }
-
-        tr.bullish {
-            border-left: 4px solid #00ff88;
-        }
-
-        tr.bearish {
-            border-left: 4px solid #ff4757;
-        }
-
-        tr.sideways {
-            border-left: 4px solid #ffa502;
-        }
-
-        /* ==========================================================================
-           DATA CELLS STYLING
-           ========================================================================== */
-        .stock-symbol {
-            font-weight: bold;
-            color: #00d4ff;
-            font-size: 16px;
-        }
-
-        .price-positive {
-            color: #00ff88;
-            font-weight: 600;
-        }
-
-        .price-negative {
-            color: #ff4757;
-            font-weight: 600;
-        }
-
-        .rsi-cell {
-            text-align: center;
-            padding: 8px;
-        }
-
-        .rsi-bullish {
-            background: rgba(0, 255, 136, 0.1);
-            color: #00ff88;
-            border-radius: 4px;
-            padding: 4px 8px;
-        }
-
-        .rsi-bearish {
-            background: rgba(255, 71, 87, 0.1);
-            color: #ff4757;
-            border-radius: 4px;
-            padding: 4px 8px;
-        }
-
-        .rsi-neutral {
-            background: rgba(255, 165, 2, 0.1);
-            color: #ffa502;
-            border-radius: 4px;
-            padding: 4px 8px;
-        }
-
-        .indicator-cell {
-            text-align: center;
-            font-size: 12px;
-        }
-
-        .trend-up {
-            background: rgba(0, 255, 136, 0.2);
-            color: #00ff88;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
-
-        .trend-down {
-            background: rgba(255, 71, 87, 0.2);
-            color: #ff4757;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
-
-        .trend-sideways {
-            background: rgba(255, 165, 2, 0.2);
-            color: #ffa502;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
-
-        .trading-panel {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 8px;
-            padding: 10px;
-            margin: 5px 0;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .trading-signal {
-            font-weight: bold;
-            padding: 4px 8px;
-            border-radius: 4px;
-            margin: 2px 0;
-            display: block;
-        }
-
-        .buy-signal {
-            background: rgba(0, 255, 136, 0.2);
-            color: #00ff88;
-            border: 1px solid rgba(0, 255, 136, 0.3);
-        }
-
-        .sell-signal {
-            background: rgba(255, 71, 87, 0.2);
-            color: #ff4757;
-            border: 1px solid rgba(255, 71, 87, 0.3);
-        }
-
-        .hold-signal {
-            background: rgba(255, 165, 2, 0.2);
-            color: #ffa502;
-            border: 1px solid rgba(255, 165, 2, 0.3);
-        }
-
-        /* ==========================================================================
-           RESPONSIVE DESIGN
-           ========================================================================== */
-        @media (max-width: 768px) {
-            .container {
-                padding: 10px;
-            }
-
-            .header h1 {
-                font-size: 1.8rem;
-            }
-
-            .controls {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            #searchInput {
-                width: 100%;
-            }
-
-            .filter-buttons {
-                justify-content: center;
-            }
-
-            table {
-                font-size: 12px;
-            }
-
-            th, td {
-                padding: 8px 6px;
-            }
-
-            .trading-panel {
-                font-size: 11px;
-                padding: 5px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .stock-table-container {
-                font-size: 10px;
-            }
-
-            th, td {
-                padding: 6px 4px;
-            }
+loadData();
+</script>
+</body>
+</html>
