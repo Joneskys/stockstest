@@ -2,13 +2,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Professional Stock Dashboard</title>
+<title>Advanced Stock Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 :root{
   --bg:#0f172a;--panel:#020617;--border:#1f2937;--text:#e5e7eb;
-  --green:#22c55e;--red:#ef4444;--orange:#f59e0b;
+  --green:#22c55e;--red:#ef4444;--orange:#f59e0b;--blue:#3b82f6;
 }
 body{margin:0;font-family:Inter,system-ui;background:var(--bg);color:var(--text);}
 header{position:sticky;top:0;background:var(--panel);padding:10px;border-bottom:1px solid var(--border);z-index:99}
@@ -17,47 +17,43 @@ input,button{background:#0f172a;color:white;border:1px solid var(--border);paddi
 button{cursor:pointer}
 button:hover{background:#1f2937}
 
+.topbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:10px}
+.card{background:#020617;border:1px solid var(--border);padding:10px;border-radius:10px;text-align:center}
+.big{font-size:20px;font-weight:bold}
+
 .container{padding:8px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border:1px solid var(--border);padding:6px;text-align:center;white-space:nowrap}
-th{position:sticky;top:60px;background:#020617}
+th{position:sticky;top:60px;background:#020617;cursor:pointer}
 tr:nth-child(even){background:#0b1220}
 
 .green{color:var(--green);font-weight:bold}
 .red{color:var(--red);font-weight:bold}
 .orange{color:var(--orange);font-weight:bold}
 
-.topbar{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-  gap:10px;
-  padding:10px;
+.popup{
+  position:fixed;bottom:20px;right:20px;
+  background:#020617;border:1px solid var(--border);
+  padding:15px;border-radius:10px;
+  display:none;z-index:999;
 }
-.card{
-  background:#020617;
-  border:1px solid var(--border);
-  padding:10px;
-  border-radius:10px;
-  text-align:center;
-}
-.big{font-size:18px;font-weight:bold}
 </style>
 </head>
 <body>
 
-<!-- LIVE MARKET PANEL -->
+<!-- LIVE PANEL -->
 <div class="topbar">
-  <div class="card">Gold 24K (10g)<div class="big" id="gold">Loading...</div></div>
-  <div class="card">Silver (1kg)<div class="big" id="silver">Loading...</div></div>
-  <div class="card">Copper<div class="big" id="copper">Loading...</div></div>
-  <div class="card">USD → INR<div class="big" id="usd">Loading...</div></div>
+  <div class="card">Gold 24K 10g (Hyd)<div class="big" id="gold">Loading…</div></div>
+  <div class="card">Silver 1kg<div class="big" id="silver">Loading…</div></div>
+  <div class="card">Copper<div class="big" id="copper">Loading…</div></div>
+  <div class="card">USD → INR<div class="big" id="usd">Loading…</div></div>
 </div>
 
 <header>
   <div class="controls">
     <input type="date" id="date">
     <button onclick="render()">Submit</button>
-    <input placeholder="Search stock..." id="search" oninput="render()">
+    <input id="search" placeholder="Search stock..." oninput="render()">
     <button onclick="filter='buy';render()">Only Buy</button>
     <button onclick="filter='sell';render()">Only Sell</button>
     <button onclick="filter='all';render()">All</button>
@@ -68,129 +64,122 @@ tr:nth-child(even){background:#0b1220}
 <table>
 <thead>
 <tr>
-<th>Stock</th><th>High</th><th>Low</th>
+<th>Stock</th><th>Live</th><th>High</th><th>Low</th>
 <th>1W H</th><th>1W L</th><th>1M H</th><th>1M L</th>
 <th>RSI</th><th>EMA9</th><th>EMA21</th>
 <th>Support</th><th>Resistance</th>
 <th>Trend</th><th>Signal</th>
-<th>Buy</th><th>Sell</th><th>SL</th><th>Target</th>
-<th>Hold</th>
-<th>GTT</th>
-<th>BT Trades</th><th>Win%</th><th>P&L%</th>
+<th>Buy/Sell</th><th>SL</th><th>Target</th><th>Hold</th>
+<th>GTT</th><th>Trades</th><th>Win%</th><th>PnL%</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 
+<div class="popup" id="popup"></div>
+
 <script>
-// ================= CONFIG ===================
-const API = "https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
-const STOCKS = ["SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"];
+// ================= CONFIG =================
+const API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
+const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"];
 
-let DB={}, filter="all";
+let DB={},filter="all",lastSignals={};
 
-// ============== LIVE COMMODITIES ==============
+// ================= LIVE COMMODITIES =================
 async function loadLive(){
   try{
-    const r = await fetch("https://red-tooth-e4f7.lovelyideas-in.workers.dev/?market=commodities");
-    const j = await r.json();
-    gold.innerText = "₹"+j.gold;
+    const r=await fetch("https://red-tooth-e4f7.lovelyideas-in.workers.dev/?market=commodities");
+    const j=await r.json();
+    gold.innerText="₹"+j.gold;
     silver.innerText="₹"+j.silver;
     copper.innerText="₹"+j.copper;
     usd.innerText="₹"+j.usd;
   }catch{
-    gold.innerText="₹6,850";
-    silver.innerText="₹78,000";
-    copper.innerText="₹720";
-    usd.innerText="₹83.2";
+    gold.innerText="₹6,950";
+    silver.innerText="₹78,500";
+    copper.innerText="₹725";
+    usd.innerText="₹83.1";
   }
 }
 
-// ============== PARSER ==================
-function parseYahoo(resp){
-  const r=resp.chart.result[0];
-  const ts=r.timestamp;
-  const q=r.indicators.quote[0];
-  let out=[];
+// ================= PARSER =================
+function parseYahoo(j){
+  const r=j.chart.result[0];
+  const ts=r.timestamp,q=r.indicators.quote[0];
+  let arr=[];
   for(let i=0;i<ts.length;i++){
     if(q.open[i]==null) continue;
-    out.push({
+    arr.push({
       date:new Date(ts[i]*1000).toISOString().slice(0,10),
-      open:q.open[i],high:q.high[i],low:q.low[i],close:q.close[i]
+      open:q.open[i],high:q.high[i],low:q.low[i],
+      close:q.close[i],volume:(q.volume?q.volume[i]:1000000)
     });
   }
-  return out;
+  return arr;
 }
 
-// ============== LOAD DATA ==================
+// ================= LOAD =================
 async function load(){
   for(let s of STOCKS){
     try{
       const r=await fetch(API+s);
       const j=await r.json();
       DB[s]=parseYahoo(j);
-    }catch{
-      DB[s]=mock();
-    }
+    }catch{ DB[s]=mock(); }
   }
-  document.getElementById("date").value = latestDate();
+  date.value=latestDate();
   render();
 }
-
 function latestDate(){
-  for(let s of STOCKS){
-    if(DB[s].length) return DB[s].at(-1).date;
-  }
+  for(let s of STOCKS) if(DB[s].length) return DB[s].at(-1).date;
 }
 
-// ============== MOCK ==================
+// ================= MOCK =================
 function mock(){
   let arr=[],p=100+Math.random()*200;
   for(let i=60;i>=0;i--){
     let d=new Date();d.setDate(d.getDate()-i);
-    let o=p,c=o+(Math.random()-0.5)*4;
-    arr.push({date:d.toISOString().slice(0,10),open:o,high:Math.max(o,c)+2,low:Math.min(o,c)-2,close:c});
+    let o=p,c=o+(Math.random()-0.5)*5;
+    arr.push({date:d.toISOString().slice(0,10),open:o,high:Math.max(o,c)+2,low:Math.min(o,c)-2,close:c,volume:1000000});
     p=c;
   }
   return arr;
 }
 
-// ============== INDICATORS ==================
+// ================= INDICATORS =================
 const EMA=(a,p)=>{let k=2/(p+1),e=a[0];a.forEach(v=>e=v*k+e*(1-k));return e;}
 const RSI=(a,p=14)=>{let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-// ============== STRATEGY ==================
-function signal(e9,e21,rsi,c,s,r){
-  if(e9>e21 && rsi>55 && c>r*0.99) return "BUY";
-  if(e9<e21 && rsi<45 && c<s*1.01) return "SELL";
+// ================= STRATEGY =================
+function signal(e9,e21,rsi,c,s,r,v,avgV){
+  if(e9>e21 && rsi>55 && c>r*0.99 && v>avgV*1.2) return "BUY";
+  if(e9<e21 && rsi<45 && c<s*1.01 && v>avgV*1.2) return "SELL";
   return "HOLD";
 }
 
-// ============== BACKTEST ==================
+// ================= BACKTEST =================
 function backtest(data){
-  let trades=0,wins=0,pnl=0;
+  let t=0,w=0,pnl=0;
   for(let i=30;i<data.length-1;i++){
     let slice=data.slice(0,i);
-    let closes=slice.map(x=>x.close);
+    let c=slice.map(x=>x.close);
     let sig=signal(
-      EMA(closes.slice(-9),9),
-      EMA(closes.slice(-21),21),
-      RSI(closes.slice(-15)),
-      closes.at(-1),
+      EMA(c.slice(-9),9),
+      EMA(c.slice(-21),21),
+      RSI(c.slice(-15)),
+      c.at(-1),
       Math.min(...slice.slice(-21).map(x=>x.low)),
-      Math.max(...slice.slice(-21).map(x=>x.high))
+      Math.max(...slice.slice(-21).map(x=>x.high)),
+      slice.at(-1).volume,
+      slice.slice(-20).reduce((a,b)=>a+b.volume,0)/20
     );
-    if(sig==="BUY"){
-      trades++;
-      let p=(data[i+1].close-data[i].close)/data[i].close*100;
-      pnl+=p;if(p>0)wins++;
-    }
+    if(sig==="BUY"){t++;let p=(data[i+1].close-data[i].close)/data[i].close*100;pnl+=p;if(p>0)w++;}
   }
-  return {trades,wins,win:trades?wins/trades*100:0,pnl};
+  return {t,w,win:t?w/t*100:0,pnl};
 }
 
-// ============== GTT ==================
+// ================= GTT =================
 function gtt(today,sig){
   let sl=sig==="BUY"?today.close*0.98:today.close*1.02;
   let tgt=sig==="BUY"?today.close*1.03:today.close*0.97;
@@ -199,34 +188,46 @@ function gtt(today,sig){
   return "Waiting";
 }
 
-// ============== RENDER ==================
+// ================= ALERT =================
+function alertSignal(stock,sig){
+  if(lastSignals[stock]===sig || sig==="HOLD") return;
+  lastSignals[stock]=sig;
+  const pop=document.getElementById("popup");
+  pop.innerHTML=`${stock}: ${sig} signal`;
+  pop.style.display="block";
+  new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
+  setTimeout(()=>pop.style.display="none",4000);
+}
+
+// ================= RENDER =================
 function render(){
-  const date=document.getElementById("date").value;
-  const search=document.getElementById("search").value.toLowerCase();
+  const dateVal=date.value,search=document.getElementById("search").value.toLowerCase();
   let html="";
   for(let s of STOCKS){
     if(search && !s.toLowerCase().includes(search)) continue;
-    let d=DB[s]; if(!d) continue;
-    let idx=d.findIndex(x=>x.date===date); if(idx<30) continue;
-    let slice=d.slice(0,idx+1),today=slice.at(-1);
-    let closes=slice.map(x=>x.close);
+    let d=DB[s],idx=d.findIndex(x=>x.date===dateVal); if(idx<30) continue;
+    let slice=d.slice(0,idx+1),today=slice.at(-1),closes=slice.map(x=>x.close);
 
     let ema9=EMA(closes.slice(-9),9),ema21=EMA(closes.slice(-21),21),rsi=RSI(closes.slice(-15));
     let month=slice.slice(-21),week=slice.slice(-6);
     let support=Math.min(...month.map(x=>x.low)),resistance=Math.max(...month.map(x=>x.high));
+    let avgV=slice.slice(-20).reduce((a,b)=>a+b.volume,0)/20;
 
-    let sig=signal(ema9,ema21,rsi,today.close,support,resistance);
+    let sig=signal(ema9,ema21,rsi,today.close,support,resistance,today.volume,avgV);
     if(filter==="buy" && sig!=="BUY") continue;
     if(filter==="sell" && sig!=="SELL") continue;
+
+    alertSignal(s,sig);
 
     let trend=ema9>ema21?"Uptrend":ema9<ema21?"Downtrend":"Sideways";
     let cls=trend==="Uptrend"?"green":trend==="Downtrend"?"red":"orange";
 
     let bt=backtest(slice),g=gtt(today,sig);
-    let buy=today.close,sell=today.close,sl=sig==="BUY"?buy*0.98:sell*1.02,tgt=sig==="BUY"?buy*1.03:sell*0.97;
+    let sl=sig==="BUY"?today.close*0.98:today.close*1.02;
+    let tgt=sig==="BUY"?today.close*1.03:today.close*0.97;
 
     html+=`<tr>
-      <td>${s}</td>
+      <td>${s}</td><td>${today.close.toFixed(2)}</td>
       <td>${today.high.toFixed(2)}</td><td>${today.low.toFixed(2)}</td>
       <td>${Math.max(...week.map(x=>x.high)).toFixed(2)}</td>
       <td>${Math.min(...week.map(x=>x.low)).toFixed(2)}</td>
@@ -236,14 +237,12 @@ function render(){
       <td>${support.toFixed(2)}</td><td>${resistance.toFixed(2)}</td>
       <td class="${cls}">${trend}</td>
       <td class="${sig==='BUY'?'green':sig==='SELL'?'red':'orange'}">${sig}</td>
-      <td>${buy.toFixed(2)}</td><td>${sell.toFixed(2)}</td>
-      <td>${sl.toFixed(2)}</td><td>${tgt.toFixed(2)}</td>
-      <td>30–90m</td>
-      <td>${g}</td>
-      <td>${bt.trades}</td><td>${bt.win.toFixed(1)}%</td><td>${bt.pnl.toFixed(2)}%</td>
+      <td>${today.close.toFixed(2)}</td><td>${sl.toFixed(2)}</td><td>${tgt.toFixed(2)}</td>
+      <td>30–90m</td><td>${g}</td>
+      <td>${bt.t}</td><td>${bt.win.toFixed(1)}%</td><td>${bt.pnl.toFixed(2)}%</td>
     </tr>`;
   }
-  document.getElementById("tbody").innerHTML=html;
+  tbody.innerHTML=html;
 }
 
 // INIT
