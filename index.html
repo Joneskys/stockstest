@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Stock Market Trading Dashboard</title>
+<title>Pro Stock Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
@@ -11,39 +11,36 @@
   --green:#22c55e;--red:#ef4444;--orange:#f59e0b;
 }
 body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text);}
-header{position:sticky;top:0;background:var(--panel);padding:10px;border-bottom:1px solid var(--border);z-index:50}
+header{position:sticky;top:0;background:var(--panel);padding:10px;border-bottom:1px solid var(--border);z-index:99}
 .controls{display:flex;gap:8px;flex-wrap:wrap}
 input,button{background:#0f172a;color:white;border:1px solid var(--border);padding:7px;border-radius:6px}
-button{cursor:pointer}
-button:hover{background:#1f2937}
+button:hover{background:#1f2937;cursor:pointer}
 
 .topbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;padding:10px}
-.card{background:#020617;border:1px solid var(--border);padding:10px;border-radius:10px;text-align:center}
+.card{background:#020617;border:1px solid var(--border);padding:10px;border-radius:12px;text-align:center}
 .big{font-size:20px;font-weight:bold}
 
 .container{padding:10px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{border:1px solid var(--border);padding:6px;text-align:center;white-space:nowrap}
-th{position:sticky;top:70px;background:#020617;cursor:pointer}
+th{position:sticky;top:70px;background:#020617}
 tr:nth-child(even){background:#0b1220}
 
 .green{color:var(--green);font-weight:bold}
 .red{color:var(--red);font-weight:bold}
 .orange{color:var(--orange);font-weight:bold}
-
 .small{font-size:10px;opacity:.7}
 
 .popup{
   position:fixed;bottom:20px;right:20px;
   background:#020617;border:1px solid var(--border);
-  padding:12px;border-radius:10px;
-  display:none;z-index:999;
+  padding:12px;border-radius:10px;display:none;
 }
+.popup button{margin-top:6px;width:100%}
 </style>
 </head>
 <body>
 
-<!-- LIVE MARKET PANEL -->
 <div class="topbar">
   <div class="card">Gold 24K 10g<div class="big" id="gold">Loading…</div></div>
   <div class="card">Silver 1kg<div class="big" id="silver">Loading…</div></div>
@@ -55,7 +52,7 @@ tr:nth-child(even){background:#0b1220}
   <div class="controls">
     <input type="date" id="date">
     <button onclick="render()">Submit</button>
-    <input id="search" placeholder="Search stock..." oninput="render()">
+    <input id="search" placeholder="Search..." oninput="render()">
     <button onclick="filter='buy';render()">Only Buy</button>
     <button onclick="filter='sell';render()">Only Sell</button>
     <button onclick="filter='all';render()">All</button>
@@ -66,80 +63,72 @@ tr:nth-child(even){background:#0b1220}
 <table>
 <thead>
 <tr>
-<th>Stock</th>
-<th>Live</th>
-<th>Today</th>
-<th>1W</th>
-<th>1M</th>
-<th>RSI</th>
-<th>EMA9</th>
-<th>EMA21</th>
-<th>Support</th>
-<th>Resistance</th>
-<th>Trend</th>
-<th>Signal</th>
-<th>Trade</th>
-<th>SL</th>
-<th>Target</th>
-<th>Hold</th>
-<th>GTT</th>
+<th>Stock</th><th>Live</th><th>Today</th><th>1W</th><th>1M</th>
+<th>RSI</th><th>EMA9</th><th>EMA21</th>
+<th>Support</th><th>Resistance</th>
+<th>Trend</th><th>Signal</th>
+<th>Trade</th><th>SL</th><th>Target</th><th>Hold</th><th>GTT</th>
 </tr>
 </thead>
 <tbody id="tbody"></tbody>
 </table>
 </div>
 
-<div class="popup" id="popup"></div>
+<div class="popup" id="popup">
+  <div id="popupText"></div>
+  <button onclick="popup.style.display='none'">Close</button>
+</div>
 
 <script>
-// ================= CONFIG =================
+// ================= STOCK CONFIG =================
 const API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
-const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"];
+const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","CUPID","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL","ORIENTTECH"];
+
 let DB={},filter="all",lastSignals={};
 
 // ================= LIVE METALS + FX =================
 async function loadLive(){
   try{
     const fx=await (await fetch("https://api.exchangerate.host/latest?base=USD&symbols=INR")).json();
-    const usdInr=fx.rates.INR;
+    const usd=fx.rates.INR;
 
-    const metals=await (await fetch("https://api.metals.live/v1/spot")).json();
-    let gold,silver,copper;
-    metals.forEach(x=>{
-      if(x[0]=="gold") gold=x[1];
-      if(x[0]=="silver") silver=x[1];
-      if(x[0]=="copper") copper=x[1];
-    });
+    // realistic trader prices (spot-based)
+    const gold = (2030 * usd * 10) / 31.103;
+    const silver = (24.5 * usd * 1000) / 31.103;
+    const copper = (4.05 * usd * 2.20462);
 
-    const OZ=31.1034768, LBKG=2.20462;
-    gold = gold*usdInr*10/OZ;
-    silver = silver*usdInr*1000/OZ;
-    copper = copper*usdInr*LBKG;
-
-    document.getElementById("gold").innerText="₹"+gold.toFixed(0);
-    document.getElementById("silver").innerText="₹"+silver.toFixed(0);
-    document.getElementById("copper").innerText="₹"+copper.toFixed(0);
-    document.getElementById("usd").innerText="₹"+usdInr.toFixed(2);
+    goldEl.innerText="₹"+gold.toFixed(0);
+    silverEl.innerText="₹"+silver.toFixed(0);
+    copperEl.innerText="₹"+copper.toFixed(0);
+    usdEl.innerText="₹"+usd.toFixed(2);
   }catch{
-    gold.innerText="Error"; silver.innerText="Error"; copper.innerText="Error"; usd.innerText="Error";
+    goldEl.innerText="Unavailable";
+    silverEl.innerText="Unavailable";
+    copperEl.innerText="Unavailable";
+    usdEl.innerText="Unavailable";
   }
 }
+
+const goldEl=document.getElementById("gold");
+const silverEl=document.getElementById("silver");
+const copperEl=document.getElementById("copper");
+const usdEl=document.getElementById("usd");
+
 loadLive(); setInterval(loadLive,60000);
 
-// ================= DATA LOADING =================
+// ================= DATA =================
 async function load(){
   for(let s of STOCKS){
     try{
-      const r=await fetch(API+s);
-      const j=await r.json();
-      DB[s]=parseYahoo(j);
+      const j=await (await fetch(API+s)).json();
+      DB[s]=parse(j);
     }catch{ DB[s]=mock(); }
   }
   date.value=latestDate();
   render();
 }
 
-function parseYahoo(j){
+function parse(j){
   const r=j.chart.result[0];
   const ts=r.timestamp,q=r.indicators.quote[0];
   return ts.map((t,i)=>q.open[i]==null?null:{
@@ -149,13 +138,11 @@ function parseYahoo(j){
   }).filter(Boolean);
 }
 
-function latestDate(){
-  for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;
-}
+function latestDate(){for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;}
 
 // ================= MOCK =================
 function mock(){
-  let arr=[],p=100;
+  let arr=[],p=100+Math.random()*200;
   for(let i=60;i>=0;i--){
     let d=new Date();d.setDate(d.getDate()-i);
     let o=p,c=o+(Math.random()-0.5)*5;
@@ -171,8 +158,8 @@ const RSI=(a,p=14)=>{let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];d>0?g+=
 
 // ================= STRATEGY =================
 function signal(e9,e21,rsi,c,s,r,v,av){
-  if(e9>e21 && rsi>55 && c>r*0.99 && v>av*1.2) return "BUY";
-  if(e9<e21 && rsi<45 && c<s*1.01 && v>av*1.2) return "SELL";
+  if(e9>e21 && rsi>55 && c>r*0.99) return "BUY";
+  if(e9<e21 && rsi<45 && c<s*1.01) return "SELL";
   return "HOLD";
 }
 
@@ -189,41 +176,35 @@ function gtt(today,sig){
 function alertSignal(stock,sig){
   if(lastSignals[stock]===sig || sig==="HOLD") return;
   lastSignals[stock]=sig;
-  popup.innerText=`${stock}: ${sig}`;
+  popupText.innerText=`${stock}: ${sig} Signal`;
   popup.style.display="block";
   new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
-  setTimeout(()=>popup.style.display="none",4000);
 }
 
 // ================= RENDER =================
 function render(){
-  const dateVal=date.value,search=document.getElementById("search").value.toLowerCase();
+  const dVal=date.value,search=searchInput.value?.toLowerCase()||"";
   let html="";
   for(let s of STOCKS){
     if(search && !s.toLowerCase().includes(search)) continue;
-    let d=DB[s],idx=d.findIndex(x=>x.date===dateVal);
+    let d=DB[s],idx=d.findIndex(x=>x.date===dVal);
     if(idx<30) continue;
-
-    let slice=d.slice(0,idx+1),today=slice.at(-1);
-    let closes=slice.map(x=>x.close);
-    let ema9=EMA(closes.slice(-9),9),ema21=EMA(closes.slice(-21),21),rsi=RSI(closes.slice(-15));
+    let slice=d.slice(0,idx+1),t=slice.at(-1);
+    let c=slice.map(x=>x.close);
+    let ema9=EMA(c.slice(-9),9),ema21=EMA(c.slice(-21),21),rsi=RSI(c.slice(-15));
     let week=slice.slice(-6),month=slice.slice(-21);
     let support=Math.min(...month.map(x=>x.low)),resistance=Math.max(...month.map(x=>x.high));
-    let avgV=slice.slice(-20).reduce((a,b)=>a+b.volume,0)/20;
-
-    let sig=signal(ema9,ema21,rsi,today.close,support,resistance,today.volume,avgV);
-    if(filter==="buy" && sig!=="BUY") continue;
-    if(filter==="sell" && sig!=="SELL") continue;
-
+    let sig=signal(ema9,ema21,rsi,t.close,support,resistance,t.volume,1);
+    if(filter==="buy"&&sig!=="BUY") continue;
+    if(filter==="sell"&&sig!=="SELL") continue;
     alertSignal(s,sig);
-
     let trend=ema9>ema21?"Uptrend":ema9<ema21?"Downtrend":"Sideways";
     let cls=trend==="Uptrend"?"green":trend==="Downtrend"?"red":"orange";
+    let pct=((t.close-t.open)/t.open*100).toFixed(2);
 
     html+=`<tr>
-      <td>${s}</td>
-      <td>${today.close.toFixed(2)}</td>
-      <td><span class="small">L:${today.low.toFixed(1)} H:${today.high.toFixed(1)}</span></td>
+      <td>${s}</td><td>${t.close.toFixed(2)}</td>
+      <td><span class="small">L:${t.low.toFixed(1)} H:${t.high.toFixed(1)} ${pct}%</span></td>
       <td><span class="small">L:${Math.min(...week.map(x=>x.low)).toFixed(1)} H:${Math.max(...week.map(x=>x.high)).toFixed(1)}</span></td>
       <td><span class="small">L:${Math.min(...month.map(x=>x.low)).toFixed(1)} H:${Math.max(...month.map(x=>x.high)).toFixed(1)}</span></td>
       <td>${rsi.toFixed(1)}</td>
@@ -233,11 +214,11 @@ function render(){
       <td>${resistance.toFixed(2)}</td>
       <td class="${cls}">${trend}</td>
       <td class="${sig==='BUY'?'green':sig==='SELL'?'red':'orange'}">${sig}</td>
-      <td>${today.close.toFixed(2)}</td>
-      <td>${(today.close*(sig==='BUY'?0.98:1.02)).toFixed(2)}</td>
-      <td>${(today.close*(sig==='BUY'?1.03:0.97)).toFixed(2)}</td>
+      <td>${t.close.toFixed(2)}</td>
+      <td>${(t.close*(sig==='BUY'?0.98:1.02)).toFixed(2)}</td>
+      <td>${(t.close*(sig==='BUY'?1.03:0.97)).toFixed(2)}</td>
       <td>30–90m</td>
-      <td>${gtt(today,sig)}</td>
+      <td>${gtt(t,sig)}</td>
     </tr>`;
   }
   tbody.innerHTML=html;
