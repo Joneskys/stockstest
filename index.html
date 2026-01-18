@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-<title>Stable Stock Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="UTF-8">
+<title>Institutional Trading Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 :root{
@@ -36,16 +36,17 @@ tr:nth-child(even){background:#0b1220}
   background:#020617;border:1px solid var(--border);
   padding:12px;border-radius:10px;display:none;
 }
+.popup button{margin-top:8px;width:100%}
 </style>
 </head>
 <body>
 
 <!-- LIVE PANEL -->
 <div class="topbar">
-  <div class="card">Gold 24K 10g<div class="big" id="gold"></div></div>
-  <div class="card">Silver 1kg<div class="big" id="silver"></div></div>
-  <div class="card">Copper<div class="big" id="copper"></div></div>
-  <div class="card">USD → INR<div class="big" id="usd"></div></div>
+  <div class="card">Gold 24K 10g<div class="big" id="gold">--</div></div>
+  <div class="card">Silver 1kg<div class="big" id="silver">--</div></div>
+  <div class="card">Copper<div class="big" id="copper">--</div></div>
+  <div class="card">USD → INR<div class="big" id="usd">--</div></div>
 </div>
 
 <header>
@@ -74,58 +75,49 @@ tr:nth-child(even){background:#0b1220}
 </table>
 </div>
 
-<div class="popup" id="popup"></div>
+<div class="popup" id="popup">
+  <div id="popupText"></div>
+  <button onclick="popup.style.display='none'">Close</button>
+</div>
 
 <script>
-/* ================= CONFIG ================= */
-const API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
+// ================= CONFIG =================
+const STOCK_API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
+const MCX_API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/mcx";
+
 const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","CUPID","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL","ORIENTTECH"];
+
 let DB={},filter="all",lastSignals={};
 
-/* ================= LIVE PANEL (STABLE) ================= */
+// ================= LIVE PANEL =================
 async function loadLive(){
   try{
-    const fx = await (await fetch("https://api.exchangerate.host/latest?base=USD&symbols=INR")).json();
-    const usd = fx.rates.INR;
+    const res = await fetch(MCX_API);
+    const data = await res.json();
 
-    // realistic fixed global spot approximations
-    const goldSpot = 2050; // USD/oz
-    const silverSpot = 24.8;
-    const copperSpot = 4.1;
+    if(!data || data.error) throw "bad";
 
-    const OZ = 31.103;
-    const LBKG = 2.20462;
+    gold.textContent   = "₹" + data.gold_10g.toLocaleString();
+    silver.textContent = "₹" + data.silver_1kg.toLocaleString();
+    copper.textContent = "₹" + data.copper_1kg.toLocaleString();
+    usd.textContent    = "₹" + data.usd_inr.toFixed(2);
 
-    gold.textContent = "₹" + ((goldSpot*usd*10)/OZ).toFixed(0);
-    silver.textContent = "₹" + ((silverSpot*usd*1000)/OZ).toFixed(0);
-    copper.textContent = "₹" + ((copperSpot*usd*LBKG)).toFixed(0);
-    usdEl.textContent = "₹" + usd.toFixed(2);
-  }catch{
-    gold.textContent="₹—";
-    silver.textContent="₹—";
-    copper.textContent="₹—";
-    usdEl.textContent="₹—";
+  }catch(err){
+    console.warn("MCX unavailable",err);
   }
 }
-const gold=document.getElementById("gold"),
-silver=document.getElementById("silver"),
-copper=document.getElementById("copper"),
-usdEl=document.getElementById("usd");
+setInterval(loadLive,30000);
+loadLive();
 
-loadLive(); setInterval(loadLive,60000);
-
-/* ================= DATA LOAD ================= */
+// ================= DATA LOAD =================
 async function load(){
   for(let s of STOCKS){
     try{
-      const r=await fetch(API+s);
-      const j=await r.json();
+      const j=await (await fetch(STOCK_API+s)).json();
       DB[s]=normalize(j) || mock();
-    }catch{
-      DB[s]=mock();
-    }
+    }catch{ DB[s]=mock(); }
   }
-  date.value = latestDate();
+  date.value=latestDate();
   render();
 }
 
@@ -138,30 +130,28 @@ function normalize(j){
       open:q.open[i],high:q.high[i],low:q.low[i],
       close:q.close[i],volume:q.volume?q.volume[i]:1e6
     }).filter(Boolean);
-  }catch{ return null; }
+  }catch{return null;}
 }
 
-function latestDate(){
-  for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;
-}
+function latestDate(){for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;}
 
-/* ================= MOCK ================= */
+// ================= MOCK =================
 function mock(){
   let arr=[],p=100+Math.random()*200;
   for(let i=60;i>=0;i--){
     let d=new Date();d.setDate(d.getDate()-i);
-    let o=p,c=o+(Math.random()-0.5)*6;
+    let o=p,c=o+(Math.random()-0.5)*5;
     arr.push({date:d.toISOString().slice(0,10),open:o,high:o+2,low:o-2,close:c,volume:1e6});
     p=c;
   }
   return arr;
 }
 
-/* ================= INDICATORS ================= */
+// ================= INDICATORS =================
 const EMA=(a,p)=>{let k=2/(p+1),e=a[0];a.forEach(v=>e=v*k+e*(1-k));return e;}
 const RSI=(a,p=14)=>{let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-/* ================= STRATEGY ================= */
+// ================= STRATEGY =================
 function signal(e9,e21,rsi,c,s,r){
   if(e9>e21 && rsi>55 && c>r*0.99) return "BUY";
   if(e9<e21 && rsi<45 && c<s*1.01) return "SELL";
@@ -175,9 +165,18 @@ function gtt(t,sig){
   return "Waiting";
 }
 
-/* ================= RENDER ================= */
+// ================= ALERT =================
+function alertSignal(stock,sig){
+  if(lastSignals[stock]===sig || sig==="HOLD") return;
+  lastSignals[stock]=sig;
+  popupText.textContent=`${stock}: ${sig} Signal`;
+  popup.style.display="block";
+  new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
+}
+
+// ================= RENDER =================
 function render(){
-  const dVal=date.value,search=document.getElementById("search").value.toLowerCase();
+  const dVal=date.value,search=searchInput.value.toLowerCase();
   let html="";
   for(let s of STOCKS){
     if(search && !s.toLowerCase().includes(search)) continue;
@@ -189,13 +188,16 @@ function render(){
     let ema9=EMA(closes.slice(-9),9),
         ema21=EMA(closes.slice(-21),21),
         rsi=RSI(closes.slice(-15));
+
     let week=slice.slice(-6),month=slice.slice(-21);
     let support=Math.min(...month.map(x=>x.low)),
         resistance=Math.max(...month.map(x=>x.high));
-    let sig=signal(ema9,ema21,rsi,t.close,support,resistance);
 
+    let sig=signal(ema9,ema21,rsi,t.close,support,resistance);
     if(filter==="buy"&&sig!=="BUY") continue;
     if(filter==="sell"&&sig!=="SELL") continue;
+
+    alertSignal(s,sig);
 
     let trend=ema9>ema21?"Uptrend":ema9<ema21?"Downtrend":"Sideways";
     let cls=trend==="Uptrend"?"green":trend==="Downtrend"?"red":"orange";
@@ -206,8 +208,11 @@ function render(){
       <td><span class="small">L:${t.low.toFixed(1)} H:${t.high.toFixed(1)} ${pct}%</span></td>
       <td><span class="small">L:${Math.min(...week.map(x=>x.low)).toFixed(1)} H:${Math.max(...week.map(x=>x.high)).toFixed(1)}</span></td>
       <td><span class="small">L:${Math.min(...month.map(x=>x.low)).toFixed(1)} H:${Math.max(...month.map(x=>x.high)).toFixed(1)}</span></td>
-      <td>${rsi.toFixed(1)}</td><td>${ema9.toFixed(2)}</td><td>${ema21.toFixed(2)}</td>
-      <td>${support.toFixed(2)}</td><td>${resistance.toFixed(2)}</td>
+      <td>${rsi.toFixed(1)}</td>
+      <td>${ema9.toFixed(2)}</td>
+      <td>${ema21.toFixed(2)}</td>
+      <td>${support.toFixed(2)}</td>
+      <td>${resistance.toFixed(2)}</td>
       <td class="${cls}">${trend}</td>
       <td>${sig}</td>
       <td>${t.close.toFixed(2)}</td>
