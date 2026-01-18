@@ -1,106 +1,132 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
-<title>Full Trading Terminal</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="UTF-8">
+<title>Stock Market Trading Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 :root{
-  --bg:#0b1220;--panel:#020617;--border:#1f2937;--text:#e5e7eb;
+  --bg:#0f172a;--panel:#020617;--border:#1f2937;--text:#e5e7eb;
   --green:#22c55e;--red:#ef4444;--orange:#f59e0b;
 }
 body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text);}
-header,nav{background:var(--panel);border-bottom:1px solid var(--border);padding:10px;position:sticky;top:0;z-index:50}
-nav button{margin-right:6px}
-button,input{background:#0f172a;color:white;border:1px solid var(--border);padding:6px;border-radius:6px}
-button:hover{background:#1f2937;cursor:pointer}
+header{position:sticky;top:0;background:var(--panel);padding:10px;border-bottom:1px solid var(--border);z-index:50}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+input,button{background:#0f172a;color:white;border:1px solid var(--border);padding:7px;border-radius:6px}
+button{cursor:pointer}
+button:hover{background:#1f2937}
 
-.tab{display:none;padding:10px}
-.tab.active{display:block}
+.topbar{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;padding:10px}
+.card{background:#020617;border:1px solid var(--border);padding:10px;border-radius:10px;text-align:center}
+.big{font-size:20px;font-weight:bold}
 
+.container{padding:10px}
 table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{border:1px solid var(--border);padding:6px;text-align:center}
-th{background:#020617;position:sticky;top:80px}
+th,td{border:1px solid var(--border);padding:6px;text-align:center;white-space:nowrap}
+th{position:sticky;top:70px;background:#020617;cursor:pointer}
+tr:nth-child(even){background:#0b1220}
 
 .green{color:var(--green);font-weight:bold}
 .red{color:var(--red);font-weight:bold}
 .orange{color:var(--orange);font-weight:bold}
 
-.popup{position:fixed;bottom:20px;right:20px;background:#020617;border:1px solid var(--border);
-padding:12px;border-radius:10px;display:none}
-canvas{background:#0b1220;border:1px solid #1f2937}
+.small{font-size:10px;opacity:.7}
+
+.popup{
+  position:fixed;bottom:20px;right:20px;
+  background:#020617;border:1px solid var(--border);
+  padding:12px;border-radius:10px;
+  display:none;z-index:999;
+}
 </style>
 </head>
 <body>
 
-<!-- NAVIGATION -->
-<nav>
-  <button onclick="showTab('scanner')">📊 Scanner</button>
-  <button onclick="showTab('chart')">📈 Chart</button>
-  <button onclick="showTab('trading')">💹 Paper Trading</button>
-  <button onclick="showTab('portfolio')">📂 Portfolio</button>
-</nav>
-
-<!-- SCANNER -->
-<div id="scanner" class="tab active">
-  <h3>Stock Scanner</h3>
-  <input placeholder="Search..." id="search" oninput="render()">
-  <button onclick="filter='buy';render()">Only Buy</button>
-  <button onclick="filter='sell';render()">Only Sell</button>
-  <button onclick="filter='all';render()">All</button>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Stock</th><th>Price</th><th>RSI</th><th>EMA9</th><th>EMA21</th>
-        <th>Support</th><th>Resistance</th>
-        <th>Trend</th><th>Signal</th><th>Chart</th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
+<!-- LIVE MARKET PANEL -->
+<div class="topbar">
+  <div class="card">Gold 24K 10g<div class="big" id="gold">Loading…</div></div>
+  <div class="card">Silver 1kg<div class="big" id="silver">Loading…</div></div>
+  <div class="card">Copper<div class="big" id="copper">Loading…</div></div>
+  <div class="card">USD → INR<div class="big" id="usd">Loading…</div></div>
 </div>
 
-<!-- CHART -->
-<div id="chart" class="tab">
-  <h3 id="chartTitle">Chart</h3>
-  <canvas id="canvas" width="900" height="400"></canvas>
-</div>
+<header>
+  <div class="controls">
+    <input type="date" id="date">
+    <button onclick="render()">Submit</button>
+    <input id="search" placeholder="Search stock..." oninput="render()">
+    <button onclick="filter='buy';render()">Only Buy</button>
+    <button onclick="filter='sell';render()">Only Sell</button>
+    <button onclick="filter='all';render()">All</button>
+  </div>
+</header>
 
-<!-- PAPER TRADING -->
-<div id="trading" class="tab">
-  <h3>Paper Trading Desk</h3>
-  <select id="tradeStock"></select>
-  <input id="qty" type="number" value="10">
-  <button onclick="placeTrade('BUY')">BUY</button>
-  <button onclick="placeTrade('SELL')">SELL</button>
-  <h4>Trades</h4>
-  <ul id="trades"></ul>
-</div>
-
-<!-- PORTFOLIO -->
-<div id="portfolio" class="tab">
-  <h3>Portfolio</h3>
-  <div id="portfolioData"></div>
+<div class="container">
+<table>
+<thead>
+<tr>
+<th>Stock</th>
+<th>Live</th>
+<th>Today</th>
+<th>1W</th>
+<th>1M</th>
+<th>RSI</th>
+<th>EMA9</th>
+<th>EMA21</th>
+<th>Support</th>
+<th>Resistance</th>
+<th>Trend</th>
+<th>Signal</th>
+<th>Trade</th>
+<th>SL</th>
+<th>Target</th>
+<th>Hold</th>
+<th>GTT</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
 </div>
 
 <div class="popup" id="popup"></div>
 
 <script>
-// ============ CONFIG ============
+// ================= CONFIG =================
 const API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
 const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL"];
+let DB={},filter="all",lastSignals={};
 
-let DB={},filter="all",selectedStock=null,trades=[];
+// ================= LIVE METALS + FX =================
+async function loadLive(){
+  try{
+    const fx=await (await fetch("https://api.exchangerate.host/latest?base=USD&symbols=INR")).json();
+    const usdInr=fx.rates.INR;
 
-// ============ TAB CONTROL ============
-function showTab(id){
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
+    const metals=await (await fetch("https://api.metals.live/v1/spot")).json();
+    let gold,silver,copper;
+    metals.forEach(x=>{
+      if(x[0]=="gold") gold=x[1];
+      if(x[0]=="silver") silver=x[1];
+      if(x[0]=="copper") copper=x[1];
+    });
+
+    const OZ=31.1034768, LBKG=2.20462;
+    gold = gold*usdInr*10/OZ;
+    silver = silver*usdInr*1000/OZ;
+    copper = copper*usdInr*LBKG;
+
+    document.getElementById("gold").innerText="₹"+gold.toFixed(0);
+    document.getElementById("silver").innerText="₹"+silver.toFixed(0);
+    document.getElementById("copper").innerText="₹"+copper.toFixed(0);
+    document.getElementById("usd").innerText="₹"+usdInr.toFixed(2);
+  }catch{
+    gold.innerText="Error"; silver.innerText="Error"; copper.innerText="Error"; usd.innerText="Error";
+  }
 }
+loadLive(); setInterval(loadLive,60000);
 
-// ============ DATA ============
+// ================= DATA LOADING =================
 async function load(){
   for(let s of STOCKS){
     try{
@@ -109,7 +135,7 @@ async function load(){
       DB[s]=parseYahoo(j);
     }catch{ DB[s]=mock(); }
   }
-  buildDropdown();
+  date.value=latestDate();
   render();
 }
 
@@ -118,111 +144,103 @@ function parseYahoo(j){
   const ts=r.timestamp,q=r.indicators.quote[0];
   return ts.map((t,i)=>q.open[i]==null?null:{
     date:new Date(t*1000).toISOString().slice(0,10),
-    open:q.open[i],high:q.high[i],low:q.low[i],
-    close:q.close[i],volume:q.volume?q.volume[i]:1e6
+    open:q.open[i],high:q.high[i],low:q.low[i],close:q.close[i],
+    volume:q.volume?q.volume[i]:1e6
   }).filter(Boolean);
 }
 
+function latestDate(){
+  for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;
+}
+
+// ================= MOCK =================
 function mock(){
   let arr=[],p=100;
   for(let i=60;i>=0;i--){
     let d=new Date();d.setDate(d.getDate()-i);
-    let o=p,c=o+(Math.random()-0.5)*4;
-    arr.push({date:d.toISOString().slice(0,10),open:o,high:o+3,low:o-3,close:c,volume:1e6});
+    let o=p,c=o+(Math.random()-0.5)*5;
+    arr.push({date:d.toISOString().slice(0,10),open:o,high:o+2,low:o-2,close:c,volume:1e6});
     p=c;
   }
   return arr;
 }
 
-// ============ INDICATORS ============
+// ================= INDICATORS =================
 const EMA=(a,p)=>{let k=2/(p+1),e=a[0];a.forEach(v=>e=v*k+e*(1-k));return e;}
 const RSI=(a,p=14)=>{let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-// ============ STRATEGY ============
-function signal(e9,e21,rsi,c,s,r){
-  if(e9>e21 && rsi>55 && c>r*0.99) return "BUY";
-  if(e9<e21 && rsi<45 && c<s*1.01) return "SELL";
+// ================= STRATEGY =================
+function signal(e9,e21,rsi,c,s,r,v,av){
+  if(e9>e21 && rsi>55 && c>r*0.99 && v>av*1.2) return "BUY";
+  if(e9<e21 && rsi<45 && c<s*1.01 && v>av*1.2) return "SELL";
   return "HOLD";
 }
 
-// ============ RENDER ============
+// ================= GTT =================
+function gtt(today,sig){
+  let sl=sig==="BUY"?today.close*0.98:today.close*1.02;
+  let tgt=sig==="BUY"?today.close*1.03:today.close*0.97;
+  if(today.low<=sl) return "SL Hit";
+  if(today.high>=tgt) return "Target Hit";
+  return "Waiting";
+}
+
+// ================= ALERT =================
+function alertSignal(stock,sig){
+  if(lastSignals[stock]===sig || sig==="HOLD") return;
+  lastSignals[stock]=sig;
+  popup.innerText=`${stock}: ${sig}`;
+  popup.style.display="block";
+  new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
+  setTimeout(()=>popup.style.display="none",4000);
+}
+
+// ================= RENDER =================
 function render(){
-  const tbody=document.getElementById("tbody");
-  const search=document.getElementById("search").value.toLowerCase();
-  tbody.innerHTML="";
+  const dateVal=date.value,search=document.getElementById("search").value.toLowerCase();
+  let html="";
   for(let s of STOCKS){
     if(search && !s.toLowerCase().includes(search)) continue;
-    let d=DB[s]; if(!d||d.length<30) continue;
-    let slice=d.slice(-60),today=slice.at(-1);
+    let d=DB[s],idx=d.findIndex(x=>x.date===dateVal);
+    if(idx<30) continue;
+
+    let slice=d.slice(0,idx+1),today=slice.at(-1);
     let closes=slice.map(x=>x.close);
-    let ema9=EMA(closes.slice(-9),9);
-    let ema21=EMA(closes.slice(-21),21);
-    let rsi=RSI(closes.slice(-15));
-    let support=Math.min(...slice.slice(-21).map(x=>x.low));
-    let resistance=Math.max(...slice.slice(-21).map(x=>x.high));
-    let sig=signal(ema9,ema21,rsi,today.close,support,resistance);
+    let ema9=EMA(closes.slice(-9),9),ema21=EMA(closes.slice(-21),21),rsi=RSI(closes.slice(-15));
+    let week=slice.slice(-6),month=slice.slice(-21);
+    let support=Math.min(...month.map(x=>x.low)),resistance=Math.max(...month.map(x=>x.high));
+    let avgV=slice.slice(-20).reduce((a,b)=>a+b.volume,0)/20;
+
+    let sig=signal(ema9,ema21,rsi,today.close,support,resistance,today.volume,avgV);
     if(filter==="buy" && sig!=="BUY") continue;
     if(filter==="sell" && sig!=="SELL") continue;
 
-    tbody.innerHTML+=`
-      <tr>
-        <td>${s}</td>
-        <td>${today.close.toFixed(2)}</td>
-        <td>${rsi.toFixed(1)}</td>
-        <td>${ema9.toFixed(2)}</td>
-        <td>${ema21.toFixed(2)}</td>
-        <td>${support.toFixed(2)}</td>
-        <td>${resistance.toFixed(2)}</td>
-        <td class="${ema9>ema21?'green':ema9<ema21?'red':'orange'}">
-          ${ema9>ema21?'Uptrend':ema9<ema21?'Downtrend':'Sideways'}
-        </td>
-        <td class="${sig==='BUY'?'green':sig==='SELL'?'red':'orange'}">${sig}</td>
-        <td><button onclick="openChart('${s}')">View</button></td>
-      </tr>`;
+    alertSignal(s,sig);
+
+    let trend=ema9>ema21?"Uptrend":ema9<ema21?"Downtrend":"Sideways";
+    let cls=trend==="Uptrend"?"green":trend==="Downtrend"?"red":"orange";
+
+    html+=`<tr>
+      <td>${s}</td>
+      <td>${today.close.toFixed(2)}</td>
+      <td><span class="small">L:${today.low.toFixed(1)} H:${today.high.toFixed(1)}</span></td>
+      <td><span class="small">L:${Math.min(...week.map(x=>x.low)).toFixed(1)} H:${Math.max(...week.map(x=>x.high)).toFixed(1)}</span></td>
+      <td><span class="small">L:${Math.min(...month.map(x=>x.low)).toFixed(1)} H:${Math.max(...month.map(x=>x.high)).toFixed(1)}</span></td>
+      <td>${rsi.toFixed(1)}</td>
+      <td>${ema9.toFixed(2)}</td>
+      <td>${ema21.toFixed(2)}</td>
+      <td>${support.toFixed(2)}</td>
+      <td>${resistance.toFixed(2)}</td>
+      <td class="${cls}">${trend}</td>
+      <td class="${sig==='BUY'?'green':sig==='SELL'?'red':'orange'}">${sig}</td>
+      <td>${today.close.toFixed(2)}</td>
+      <td>${(today.close*(sig==='BUY'?0.98:1.02)).toFixed(2)}</td>
+      <td>${(today.close*(sig==='BUY'?1.03:0.97)).toFixed(2)}</td>
+      <td>30–90m</td>
+      <td>${gtt(today,sig)}</td>
+    </tr>`;
   }
-}
-
-// ============ CHART ============
-function openChart(stock){
-  showTab("chart");
-  chartTitle.innerText=stock;
-  let ctx=canvas.getContext("2d");
-  ctx.clearRect(0,0,900,400);
-  let d=DB[stock].slice(-60);
-  let max=Math.max(...d.map(x=>x.high));
-  let min=Math.min(...d.map(x=>x.low));
-  d.forEach((c,i)=>{
-    let x=i*14;
-    let yH=400-(c.high-min)/(max-min)*380;
-    let yL=400-(c.low-min)/(max-min)*380;
-    ctx.strokeStyle="#888";ctx.beginPath();ctx.moveTo(x,yH);ctx.lineTo(x,yL);ctx.stroke();
-    ctx.fillStyle=c.close>=c.open?"#22c55e":"#ef4444";
-    let yO=400-(c.open-min)/(max-min)*380;
-    let yC=400-(c.close-min)/(max-min)*380;
-    ctx.fillRect(x-3,Math.min(yO,yC),6,Math.abs(yO-yC)+1);
-  });
-}
-
-// ============ PAPER TRADING ============
-function buildDropdown(){
-  tradeStock.innerHTML=STOCKS.map(s=>`<option>${s}</option>`).join("");
-}
-function placeTrade(type){
-  let s=tradeStock.value;
-  let price=DB[s].at(-1).close;
-  trades.push({s,type,qty:+qty.value,price});
-  updateTrades();
-}
-function updateTrades(){
-  tradesEl.innerHTML="";
-  let pnl=0;
-  trades.forEach(t=>{
-    let current=DB[t.s].at(-1).close;
-    let p=(t.type==="BUY"?current-t.price:t.price-current)*t.qty;
-    pnl+=p;
-    tradesEl.innerHTML+=`<li>${t.s} ${t.type} ${t.qty} @ ${t.price.toFixed(2)} | P&L: ${p.toFixed(2)}</li>`;
-  });
-  portfolioData.innerHTML="Total P&L: ₹"+pnl.toFixed(2);
+  tbody.innerHTML=html;
 }
 
 // INIT
