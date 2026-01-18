@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Pro Stock Dashboard</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8" />
+<title>Stable Stock Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 
 <style>
 :root{
@@ -26,9 +26,9 @@ th,td{border:1px solid var(--border);padding:6px;text-align:center;white-space:n
 th{position:sticky;top:70px;background:#020617}
 tr:nth-child(even){background:#0b1220}
 
-.green{color:var(--green);font-weight:bold}
-.red{color:var(--red);font-weight:bold}
-.orange{color:var(--orange);font-weight:bold}
+.green{color:#22c55e;font-weight:bold}
+.red{color:#ef4444;font-weight:bold}
+.orange{color:#f59e0b;font-weight:bold}
 .small{font-size:10px;opacity:.7}
 
 .popup{
@@ -36,16 +36,16 @@ tr:nth-child(even){background:#0b1220}
   background:#020617;border:1px solid var(--border);
   padding:12px;border-radius:10px;display:none;
 }
-.popup button{margin-top:6px;width:100%}
 </style>
 </head>
 <body>
 
+<!-- LIVE PANEL -->
 <div class="topbar">
-  <div class="card">Gold 24K 10g<div class="big" id="gold">Loading…</div></div>
-  <div class="card">Silver 1kg<div class="big" id="silver">Loading…</div></div>
-  <div class="card">Copper<div class="big" id="copper">Loading…</div></div>
-  <div class="card">USD → INR<div class="big" id="usd">Loading…</div></div>
+  <div class="card">Gold 24K 10g<div class="big" id="gold"></div></div>
+  <div class="card">Silver 1kg<div class="big" id="silver"></div></div>
+  <div class="card">Copper<div class="big" id="copper"></div></div>
+  <div class="card">USD → INR<div class="big" id="usd"></div></div>
 </div>
 
 <header>
@@ -74,130 +74,129 @@ tr:nth-child(even){background:#0b1220}
 </table>
 </div>
 
-<div class="popup" id="popup">
-  <div id="popupText"></div>
-  <button onclick="popup.style.display='none'">Close</button>
-</div>
+<div class="popup" id="popup"></div>
 
 <script>
-// ================= STOCK CONFIG =================
+/* ================= CONFIG ================= */
 const API="https://red-tooth-e4f7.lovelyideas-in.workers.dev/?symbol=";
 const STOCKS=["SAGILITY","GROWWGOLD","JPPOWER","IDEA","CUPID","BSE","GROWWSILVER","HDFCBANK","SBIN","GREAVESCOT","NTPCGREEN","TCS","KIMS","MON100","HARAFIN","RBLBANK","IRIS","MEESHO","HINDCOPPER","RVNL","ORIENTTECH"];
-
 let DB={},filter="all",lastSignals={};
 
-// ================= LIVE METALS + FX =================
+/* ================= LIVE PANEL (STABLE) ================= */
 async function loadLive(){
   try{
-    const fx=await (await fetch("https://api.exchangerate.host/latest?base=USD&symbols=INR")).json();
-    const usd=fx.rates.INR;
+    const fx = await (await fetch("https://api.exchangerate.host/latest?base=USD&symbols=INR")).json();
+    const usd = fx.rates.INR;
 
-    // realistic trader prices (spot-based)
-    const gold = (2030 * usd * 10) / 31.103;
-    const silver = (24.5 * usd * 1000) / 31.103;
-    const copper = (4.05 * usd * 2.20462);
+    // realistic fixed global spot approximations
+    const goldSpot = 2050; // USD/oz
+    const silverSpot = 24.8;
+    const copperSpot = 4.1;
 
-    goldEl.innerText="₹"+gold.toFixed(0);
-    silverEl.innerText="₹"+silver.toFixed(0);
-    copperEl.innerText="₹"+copper.toFixed(0);
-    usdEl.innerText="₹"+usd.toFixed(2);
+    const OZ = 31.103;
+    const LBKG = 2.20462;
+
+    gold.textContent = "₹" + ((goldSpot*usd*10)/OZ).toFixed(0);
+    silver.textContent = "₹" + ((silverSpot*usd*1000)/OZ).toFixed(0);
+    copper.textContent = "₹" + ((copperSpot*usd*LBKG)).toFixed(0);
+    usdEl.textContent = "₹" + usd.toFixed(2);
   }catch{
-    goldEl.innerText="Unavailable";
-    silverEl.innerText="Unavailable";
-    copperEl.innerText="Unavailable";
-    usdEl.innerText="Unavailable";
+    gold.textContent="₹—";
+    silver.textContent="₹—";
+    copper.textContent="₹—";
+    usdEl.textContent="₹—";
   }
 }
-
-const goldEl=document.getElementById("gold");
-const silverEl=document.getElementById("silver");
-const copperEl=document.getElementById("copper");
-const usdEl=document.getElementById("usd");
+const gold=document.getElementById("gold"),
+silver=document.getElementById("silver"),
+copper=document.getElementById("copper"),
+usdEl=document.getElementById("usd");
 
 loadLive(); setInterval(loadLive,60000);
 
-// ================= DATA =================
+/* ================= DATA LOAD ================= */
 async function load(){
   for(let s of STOCKS){
     try{
-      const j=await (await fetch(API+s)).json();
-      DB[s]=parse(j);
-    }catch{ DB[s]=mock(); }
+      const r=await fetch(API+s);
+      const j=await r.json();
+      DB[s]=normalize(j) || mock();
+    }catch{
+      DB[s]=mock();
+    }
   }
-  date.value=latestDate();
+  date.value = latestDate();
   render();
 }
 
-function parse(j){
-  const r=j.chart.result[0];
-  const ts=r.timestamp,q=r.indicators.quote[0];
-  return ts.map((t,i)=>q.open[i]==null?null:{
-    date:new Date(t*1000).toISOString().slice(0,10),
-    open:q.open[i],high:q.high[i],low:q.low[i],close:q.close[i],
-    volume:q.volume?q.volume[i]:1e6
-  }).filter(Boolean);
+function normalize(j){
+  try{
+    const r=j.chart.result[0];
+    const ts=r.timestamp,q=r.indicators.quote[0];
+    return ts.map((t,i)=>q.open[i]==null?null:{
+      date:new Date(t*1000).toISOString().slice(0,10),
+      open:q.open[i],high:q.high[i],low:q.low[i],
+      close:q.close[i],volume:q.volume?q.volume[i]:1e6
+    }).filter(Boolean);
+  }catch{ return null; }
 }
 
-function latestDate(){for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;}
+function latestDate(){
+  for(let s of STOCKS) if(DB[s]?.length) return DB[s].at(-1).date;
+}
 
-// ================= MOCK =================
+/* ================= MOCK ================= */
 function mock(){
   let arr=[],p=100+Math.random()*200;
   for(let i=60;i>=0;i--){
     let d=new Date();d.setDate(d.getDate()-i);
-    let o=p,c=o+(Math.random()-0.5)*5;
+    let o=p,c=o+(Math.random()-0.5)*6;
     arr.push({date:d.toISOString().slice(0,10),open:o,high:o+2,low:o-2,close:c,volume:1e6});
     p=c;
   }
   return arr;
 }
 
-// ================= INDICATORS =================
+/* ================= INDICATORS ================= */
 const EMA=(a,p)=>{let k=2/(p+1),e=a[0];a.forEach(v=>e=v*k+e*(1-k));return e;}
 const RSI=(a,p=14)=>{let g=0,l=0;for(let i=1;i<=p;i++){let d=a[i]-a[i-1];d>0?g+=d:l-=d;}let rs=g/(l||1);return 100-(100/(1+rs));}
 
-// ================= STRATEGY =================
-function signal(e9,e21,rsi,c,s,r,v,av){
+/* ================= STRATEGY ================= */
+function signal(e9,e21,rsi,c,s,r){
   if(e9>e21 && rsi>55 && c>r*0.99) return "BUY";
   if(e9<e21 && rsi<45 && c<s*1.01) return "SELL";
   return "HOLD";
 }
-
-// ================= GTT =================
-function gtt(today,sig){
-  let sl=sig==="BUY"?today.close*0.98:today.close*1.02;
-  let tgt=sig==="BUY"?today.close*1.03:today.close*0.97;
-  if(today.low<=sl) return "SL Hit";
-  if(today.high>=tgt) return "Target Hit";
+function gtt(t,sig){
+  let sl=sig==="BUY"?t.close*0.98:t.close*1.02;
+  let tgt=sig==="BUY"?t.close*1.03:t.close*0.97;
+  if(t.low<=sl) return "SL Hit";
+  if(t.high>=tgt) return "Target Hit";
   return "Waiting";
 }
 
-// ================= ALERT =================
-function alertSignal(stock,sig){
-  if(lastSignals[stock]===sig || sig==="HOLD") return;
-  lastSignals[stock]=sig;
-  popupText.innerText=`${stock}: ${sig} Signal`;
-  popup.style.display="block";
-  new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg").play();
-}
-
-// ================= RENDER =================
+/* ================= RENDER ================= */
 function render(){
-  const dVal=date.value,search=searchInput.value?.toLowerCase()||"";
+  const dVal=date.value,search=document.getElementById("search").value.toLowerCase();
   let html="";
   for(let s of STOCKS){
     if(search && !s.toLowerCase().includes(search)) continue;
-    let d=DB[s],idx=d.findIndex(x=>x.date===dVal);
-    if(idx<30) continue;
+    let d=DB[s]; if(!d||d.length<30) continue;
+    let idx=d.findIndex(x=>x.date===dVal); if(idx<30) idx=d.length-1;
     let slice=d.slice(0,idx+1),t=slice.at(-1);
-    let c=slice.map(x=>x.close);
-    let ema9=EMA(c.slice(-9),9),ema21=EMA(c.slice(-21),21),rsi=RSI(c.slice(-15));
+    let closes=slice.map(x=>x.close);
+
+    let ema9=EMA(closes.slice(-9),9),
+        ema21=EMA(closes.slice(-21),21),
+        rsi=RSI(closes.slice(-15));
     let week=slice.slice(-6),month=slice.slice(-21);
-    let support=Math.min(...month.map(x=>x.low)),resistance=Math.max(...month.map(x=>x.high));
-    let sig=signal(ema9,ema21,rsi,t.close,support,resistance,t.volume,1);
+    let support=Math.min(...month.map(x=>x.low)),
+        resistance=Math.max(...month.map(x=>x.high));
+    let sig=signal(ema9,ema21,rsi,t.close,support,resistance);
+
     if(filter==="buy"&&sig!=="BUY") continue;
     if(filter==="sell"&&sig!=="SELL") continue;
-    alertSignal(s,sig);
+
     let trend=ema9>ema21?"Uptrend":ema9<ema21?"Downtrend":"Sideways";
     let cls=trend==="Uptrend"?"green":trend==="Downtrend"?"red":"orange";
     let pct=((t.close-t.open)/t.open*100).toFixed(2);
@@ -207,16 +206,13 @@ function render(){
       <td><span class="small">L:${t.low.toFixed(1)} H:${t.high.toFixed(1)} ${pct}%</span></td>
       <td><span class="small">L:${Math.min(...week.map(x=>x.low)).toFixed(1)} H:${Math.max(...week.map(x=>x.high)).toFixed(1)}</span></td>
       <td><span class="small">L:${Math.min(...month.map(x=>x.low)).toFixed(1)} H:${Math.max(...month.map(x=>x.high)).toFixed(1)}</span></td>
-      <td>${rsi.toFixed(1)}</td>
-      <td>${ema9.toFixed(2)}</td>
-      <td>${ema21.toFixed(2)}</td>
-      <td>${support.toFixed(2)}</td>
-      <td>${resistance.toFixed(2)}</td>
+      <td>${rsi.toFixed(1)}</td><td>${ema9.toFixed(2)}</td><td>${ema21.toFixed(2)}</td>
+      <td>${support.toFixed(2)}</td><td>${resistance.toFixed(2)}</td>
       <td class="${cls}">${trend}</td>
-      <td class="${sig==='BUY'?'green':sig==='SELL'?'red':'orange'}">${sig}</td>
+      <td>${sig}</td>
       <td>${t.close.toFixed(2)}</td>
-      <td>${(t.close*(sig==='BUY'?0.98:1.02)).toFixed(2)}</td>
-      <td>${(t.close*(sig==='BUY'?1.03:0.97)).toFixed(2)}</td>
+      <td>${(t.close*(sig==="BUY"?0.98:1.02)).toFixed(2)}</td>
+      <td>${(t.close*(sig==="BUY"?1.03:0.97)).toFixed(2)}</td>
       <td>30–90m</td>
       <td>${gtt(t,sig)}</td>
     </tr>`;
@@ -224,7 +220,6 @@ function render(){
   tbody.innerHTML=html;
 }
 
-// INIT
 load();
 </script>
 </body>
